@@ -314,6 +314,16 @@
   };
   let prec='int4', paused=false, rate=0.50, density=0.55, temp=0.70, attnOn=true, causal=true, showLabels=true, flash=0;
 
+  // ---------- tuning (animation + render feel; safe to tweak, no logic depends on these) ----------
+  const FIELD_SETTLE    = 0.12;   // how fast a weight cell eases toward its quantized target
+  const FLASH_DECAY     = 0.92;   // decay of the precision-switch flash
+  const ACT_DECAY       = 0.90;   // decay of cell activation glow
+  const ACT_DECAY_FOCUS = 0.94;   // slower activation decay while following one token
+  const AUTOROT_SPEED   = 0.10;   // idle auto-rotation rate
+  const TOUR_EASE       = 0.07;   // camera glide easing during the guided tour
+  const GLOW_BLUR_PX    = 5;      // bloom blur radius
+  const GLOW_ALPHA      = 0.45;   // bloom additive opacity
+
   // ---------- rng + viridis ----------
   function mul32(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
   const rnd=mul32(12345);
@@ -347,6 +357,7 @@
     let v=Math.sin(c*0.55+L*1.1)*0.5+Math.cos(r*0.5-L*0.8)*0.45+Math.sin((c+r)*0.3)*0.18;
     v=Math.max(-1,Math.min(1,v*0.8)); base[n]=v;disp[n]=v;targ[n]=v; n++;
   }
+  // symmetric uniform quantization to `levels` steps over [-1,1]; FP32 (levels>=1e6) passes through
   function quantize(v,levels){if(levels>=1e6)return v;const s=2/levels;return Math.round(v/s)*s;}
   function recompute(){const lv=PREC[prec].levels;for(let i=0;i<COUNT;i++)targ[i]=quantize(base[i],lv);quantizeProj();}
   recompute();
@@ -376,6 +387,7 @@
   // ---- tokenizer (approximate subword) + token embeddings + positional encoding ----
   let seqTokens=[], seqLen=0;
   const WORDS=['the','a','of','to','and','in','is','that','it','was','for','on','with','as','at','by','from','this','they','are','not','have','be','more'];
+  // approximate subword tokenizer: short words pass through, longer ones split into 4/3-char pieces (## marks a continuation)
   function tokenize(text){
     const parts=text.toLowerCase().match(/[a-z0-9]+|[^\sa-z0-9]/g)||[]; const out=[];
     for(const w of parts){ if(w.length<=4){out.push(w);} else { let i=0; while(i<w.length){ const len=i===0?Math.min(4,w.length-i):Math.min(3,w.length-i); out.push((i>0?'##':'')+w.slice(i,i+len)); i+=len; } } }
@@ -383,6 +395,7 @@
   }
   function strHash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h>>>0;}
   function embedFor(s){const r=mul32(strHash(s)||1);const v=new Float32Array(D);for(let d=0;d<D;d++)v[d]=(r()*2-1)*0.8;return v;}
+  // sinusoidal positional encoding added to the token embedding (even dims sin, odd dims cos)
   function addPos(o,pos){for(let d=0;d<D;d++){const f=Math.pow(10000,-(d-(d&1))/D);H0[o+d]+=0.32*((d&1)?Math.cos(pos*f):Math.sin(pos*f));}}
   function setSentence(text){
     seqTokens=tokenize(text).slice(0,GX); seqLen=seqTokens.length;
@@ -401,6 +414,7 @@
     for(let d=0;d<D;d++) H[i*D+d]=H0[i*D+d];
   }
   function isActive(i){return TPOS[i]<seqLen && THR[i]<density;}
+  // project a token's latent vector onto two fixed axes and map the angle to a [-1,1] color coordinate
   function colorVal(i){let u=0,v=0;const o=i*D;for(let d=0;d<D;d++){u+=H[o+d]*P1[d];v+=H[o+d]*P2[d];}return Math.atan2(v,u)/Math.PI;}
   // focus mode: follow one token and record its trajectory + per-layer state
   let focusOn=false, focusTok=-1, lastFZ=0, pbN=0, pbHead=0; const PN=150;
@@ -436,90 +450,175 @@
   function setFoc(){FOC=0.45*Math.min(W,H_)*dist/MAXR;}
   function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H_=innerHeight;cv.width=W*DPR;cv.height=H_*DPR;cv.style.width=W+'px';cv.style.height=H_+'px';ctx.setTransform(DPR,0,0,DPR,0,0);CXp=W/2;CYp=H_/2;setFoc();GW=Math.max(2,Math.round(W*0.5));GH=Math.max(2,Math.round(H_*0.5));glowCv.width=GW;glowCv.height=GH;}
   addEventListener('resize',resize); resize();
-  let sxo,syo,sco,dzo;
-  function project(x,y,z){const ca=Math.cos(ay),sa=Math.sin(ay);const x1=x*ca-z*sa,z1=x*sa+z*ca;const cx=Math.cos(ax),sx2=Math.sin(ax);const y2=y*cx-z1*sx2,z2=y*sx2+z1*cx;const d=z2+dist;if(d<=0.5){dzo=-1;return false;}const s=FOC/d;sxo=CXp+x1*s;syo=CYp-y2*s;sco=s;dzo=d;return true;}
+  // project() output. To avoid allocating a result object on every call inside the
+  // hot render loop, project() writes its result into these shared out-params and
+  // returns only a visibility flag. Read them immediately after each call.
+  let sxo, syo, sco, dzo;   // screen x, screen y, scale factor, depth
+  function project(x, y, z){
+    // rotate around Y (yaw = ay), then around X (pitch = ax)
+    const ca = Math.cos(ay), sa = Math.sin(ay);
+    const x1 = x*ca - z*sa,  z1 = x*sa + z*ca;
+    const cx = Math.cos(ax), sx2 = Math.sin(ax);
+    const y2 = y*cx - z1*sx2, z2 = y*sx2 + z1*cx;
+    // perspective divide; reject points at or behind the eye plane
+    const d = z2 + dist;
+    if(d <= 0.5){ dzo = -1; return false; }
+    const s = FOC/d;
+    sxo = CXp + x1*s;
+    syo = CYp - y2*s;
+    sco = s;
+    dzo = d;
+    return true;
+  }
 
   // ---------- field ----------
-  function updateField(){flash*=0.92;const adec=focusOn?0.94:0.90;for(let i=0;i<COUNT;i++){disp[i]+=(targ[i]-disp[i])*0.12;act[i]*=adec;if(project(X[i],Y[i],Z[i])){sx[i]=sxo;sy[i]=syo;sc[i]=sco;dz[i]=dzo;}else dz[i]=1e9;}}
+  // Ease every weight cell toward its quantized display value, decay its activation
+  // glow, and project it to screen space for this frame.
+  function updateField(){
+    flash *= FLASH_DECAY;
+    const adec = focusOn ? ACT_DECAY_FOCUS : ACT_DECAY;
+    for(let i=0; i<COUNT; i++){
+      disp[i] += (targ[i] - disp[i]) * FIELD_SETTLE;
+      act[i]  *= adec;
+      if(project(X[i], Y[i], Z[i])){ sx[i]=sxo; sy[i]=syo; sc[i]=sco; dz[i]=dzo; }
+      else dz[i] = 1e9;
+    }
+  }
 
   // ---------- tokens step (transform + attention + output sampling) ----------
   const mixv=new Float32Array(D), outv=new Float32Array(D);
   const qbuf=new Float32Array(DH), attvec=new Float32Array(D), attnD=new Float32Array(D), ascore=new Float32Array(NTOK);
   function stepTokens(dt){
-    let inField=0; const sp=(0.5+rate*1.9)*7.0, ALPHA=0.55;
-    for(let L=0;L<LAYERS;L++) bucket[L].length=0;
-    // pass 1
-    for(let i=0;i<NTOK;i++){
-      const cur=isActive(i); if(cur&&!TACT[i]) spawn(i); TACT[i]=cur?1:0; crossL[i]=-1;
-      if(!cur){THAS[i]=0;continue;}
-      TPZ[i]=TZ[i]; TX[i]+=TVX[i]*dt;TY[i]+=TVY[i]*dt;TZ[i]+=sp*dt;
-      TVX[i]+=-TX[i]*0.01*dt;TVY[i]+=-TY[i]*0.01*dt;TVX[i]*=0.96;TVY[i]*=0.96;TPUL[i]*=0.90;
-      if(TX[i]>HX*1.1)TX[i]=HX*1.1;if(TX[i]<-HX*1.1)TX[i]=-HX*1.1;
-      if(TY[i]>HY*1.1)TY[i]=HY*1.1;if(TY[i]<-HY*1.1)TY[i]=-HY*1.1;
-      if(TZ[i]>TRAVEL) spawn(i);
-      for(let L=0;L<LAYERS;L++){
-        if(TPZ[i]<layerZ[L]&&TZ[i]>=layerZ[L]){crossL[i]=L;crossC[i]=colAt(TX[i]);crossR[i]=rowAt(TY[i]);break;}
-        if(Math.abs(TZ[i]-layerZ[L])<ATT_BAND) bucket[L].push(i);
+    let inField = 0;
+    const sp = (0.5 + rate*1.9) * 7.0;   // forward speed of tokens through the stack
+    const ALPHA = 0.55;                  // residual mix for the per-layer weight transform
+    for(let L=0; L<LAYERS; L++) bucket[L].length = 0;
+
+    // ---- pass 1: advance every active token, detect layer crossings, fill attention buckets ----
+    for(let i=0; i<NTOK; i++){
+      const cur = isActive(i);
+      if(cur && !TACT[i]) spawn(i);
+      TACT[i] = cur ? 1 : 0;
+      crossL[i] = -1;
+      if(!cur){ THAS[i] = 0; continue; }
+
+      // integrate position: drift in x/y, steady advance in z
+      TPZ[i] = TZ[i];
+      TX[i] += TVX[i]*dt;  TY[i] += TVY[i]*dt;  TZ[i] += sp*dt;
+      // gentle centering force, velocity damping, pulse decay
+      TVX[i] += -TX[i]*0.01*dt;  TVY[i] += -TY[i]*0.01*dt;
+      TVX[i] *= 0.96;  TVY[i] *= 0.96;  TPUL[i] *= 0.90;
+      // clamp inside the lattice footprint
+      if(TX[i] >  HX*1.1) TX[i] =  HX*1.1;   if(TX[i] < -HX*1.1) TX[i] = -HX*1.1;
+      if(TY[i] >  HY*1.1) TY[i] =  HY*1.1;   if(TY[i] < -HY*1.1) TY[i] = -HY*1.1;
+      if(TZ[i] > TRAVEL) spawn(i);   // exited the back: respawn at the front
+
+      // record the layer this token crosses this frame; nearby layers collect it
+      // into a bucket, which is the candidate set for attention
+      for(let L=0; L<LAYERS; L++){
+        if(TPZ[i] < layerZ[L] && TZ[i] >= layerZ[L]){
+          crossL[i] = L; crossC[i] = colAt(TX[i]); crossR[i] = rowAt(TY[i]); break;
+        }
+        if(Math.abs(TZ[i] - layerZ[L]) < ATT_BAND) bucket[L].push(i);
       }
-      if(TZ[i]>-HZ-1&&TZ[i]<HZ+1) inField++;
+      if(TZ[i] > -HZ-1 && TZ[i] < HZ+1) inField++;
     }
-    // pass 2
-    for(let i=0;i<NTOK;i++){
-      const L=crossL[i]; if(L<0) continue; const o=i*D;
-      for(let d=0;d<D;d++) mixv[d]=H[o+d];
-      TNBN[i]=0;
+
+    // ---- pass 2: for each token that crossed a layer, apply attention then the weight transform ----
+    for(let i=0; i<NTOK; i++){
+      const L = crossL[i]; if(L < 0) continue;
+      const o = i*D;
+      for(let d=0; d<D; d++) mixv[d] = H[o+d];   // start from the current representation
+      TNBN[i] = 0;
+
+      // --- multi-head scaled dot-product attention over the tokens near this layer ---
       if(attnOn){
-        const bk=bucket[L], m=bk.length;
-        if(m>0){
-          for(let d=0;d<D;d++) attvec[d]=0;
-          let linkN=0; const invs=ATT_SHARP/Math.sqrt(DH);
-          for(let hh=0;hh<HEADS;hh++){
-            for(let a=0;a<DH;a++){let s=0;const wo=(hh*DH+a)*D;for(let d=0;d<D;d++)s+=WQq[wo+d]*H[o+d];qbuf[a]=s;}
-            let mxs=-1e9;
-            for(let p=0;p<m;p++){const j=bk[p],jb=j*D;
-              if(causal && TPOS[j]>TPOS[i]){ascore[p]=-1e30;continue;}   // a token attends only to earlier positions
-              let s=0;for(let a=0;a<DH;a++){let kk=0;const wo=(hh*DH+a)*D;for(let d=0;d<D;d++)kk+=WKq[wo+d]*H[jb+d];s+=qbuf[a]*kk;}
-              s*=invs;ascore[p]=s;if(s>mxs)mxs=s;}
-            let sw=0;for(let p=0;p<m;p++){const e=Math.exp(ascore[p]-mxs);ascore[p]=e;sw+=e;}
-            let best=-1,bestw=-1;
-            for(let p=0;p<m;p++){const pw=ascore[p]/sw,j=bk[p];if(j!==i&&pw>bestw){bestw=pw;best=j;}}
-            for(let a=0;a<DH;a++){let acc=0;const wo=(hh*DH+a)*D;
-              for(let p=0;p<m;p++){const j=bk[p],jb=j*D,pw=ascore[p]/sw;let vv=0;for(let d=0;d<D;d++)vv+=WVq[wo+d]*H[jb+d];acc+=pw*vv;}
-              attvec[hh*DH+a]=acc;}
-            TNB[i*ATT_LINKS+hh]=best; TNW[i*ATT_LINKS+hh]=best>=0?bestw:0; if(best>=0)linkN=hh+1;
+        const bk = bucket[L], m = bk.length;
+        if(m > 0){
+          for(let d=0; d<D; d++) attvec[d] = 0;
+          let linkN = 0;
+          const invs = ATT_SHARP / Math.sqrt(DH);   // logit scale, ~ 1/sqrt(d_head)
+          for(let hh=0; hh<HEADS; hh++){
+            // query for this token in head hh
+            for(let a=0; a<DH; a++){
+              let s=0; const wo=(hh*DH+a)*D;
+              for(let d=0; d<D; d++) s += WQq[wo+d]*H[o+d];
+              qbuf[a] = s;
+            }
+            // score against every candidate key, with causal masking
+            let mxs = -1e9;
+            for(let p=0; p<m; p++){
+              const j = bk[p], jb = j*D;
+              if(causal && TPOS[j] > TPOS[i]){ ascore[p] = -1e30; continue; }   // attend only to earlier positions
+              let s=0;
+              for(let a=0; a<DH; a++){
+                let kk=0; const wo=(hh*DH+a)*D;
+                for(let d=0; d<D; d++) kk += WKq[wo+d]*H[jb+d];
+                s += qbuf[a]*kk;
+              }
+              s *= invs; ascore[p] = s; if(s > mxs) mxs = s;
+            }
+            // softmax over the scores
+            let sw=0;
+            for(let p=0; p<m; p++){ const e = Math.exp(ascore[p]-mxs); ascore[p] = e; sw += e; }
+            // strongest attended token, for drawing the link, excluding self
+            let best=-1, bestw=-1;
+            for(let p=0; p<m; p++){ const pw=ascore[p]/sw, j=bk[p]; if(j!==i && pw>bestw){ bestw=pw; best=j; } }
+            // weighted sum of values into this head's slice of attvec
+            for(let a=0; a<DH; a++){
+              let acc=0; const wo=(hh*DH+a)*D;
+              for(let p=0; p<m; p++){
+                const j=bk[p], jb=j*D, pw=ascore[p]/sw;
+                let vv=0; for(let d=0; d<D; d++) vv += WVq[wo+d]*H[jb+d];
+                acc += pw*vv;
+              }
+              attvec[hh*DH+a] = acc;
+            }
+            TNB[i*ATT_LINKS+hh] = best;
+            TNW[i*ATT_LINKS+hh] = best>=0 ? bestw : 0;
+            if(best>=0) linkN = hh+1;
           }
-          for(let d=0;d<D;d++){let s=0;const dr=d*D;for(let e=0;e<D;e++)s+=WOq[dr+e]*attvec[e];attnD[d]=s;}
-          for(let d=0;d<D;d++) mixv[d]=(1-ATT_BETA)*H[o+d]+ATT_BETA*attnD[d];
-          TNBN[i]=linkN;
+          // output projection (WO), then residual blend back into mixv
+          for(let d=0; d<D; d++){ let s=0; const dr=d*D; for(let e=0; e<D; e++) s += WOq[dr+e]*attvec[e]; attnD[d] = s; }
+          for(let d=0; d<D; d++) mixv[d] = (1-ATT_BETA)*H[o+d] + ATT_BETA*attnD[d];
+          TNBN[i] = linkN;
         }
       }
-      // DxD local weight transform: h <- tanh(h + ALPHA * (W h)), residual
-      const c=crossC[i], r=crossR[i];
-      for(let k=0;k<D;k++){
-        const rr=Math.min(ROWS-1,r+k); let accu=0;
-        for(let j=0;j<D;j++){const cc=Math.min(COLS-1,c+j);accu+=disp[idx(cc,rr,L)]*mixv[j];}
-        outv[k]=Math.tanh(mixv[k]+ALPHA*accu);
+
+      // --- DxD local weight transform: h <- tanh(h + ALPHA * (W h)), with residual ---
+      const c = crossC[i], r = crossR[i];
+      for(let k=0; k<D; k++){
+        const rr = Math.min(ROWS-1, r+k); let accu = 0;
+        for(let j=0; j<D; j++){ const cc = Math.min(COLS-1, c+j); accu += disp[idx(cc,rr,L)]*mixv[j]; }
+        outv[k] = Math.tanh(mixv[k] + ALPHA*accu);
       }
-      for(let d=0;d<D;d++) H[o+d]=outv[d];
-      if(i===focusTok) flLayer[L]=colorVal(i);
-      // structured deflection from updated representation
-      TVX[i]+=outv[0]*1.6; TVY[i]+=outv[1]*1.6; TPUL[i]=1;
-      // activate cells (in focus mode only the followed token lights the lattice)
-      if(!focusOn || i===focusTok){
-        const cl=Math.max(0,c-1),cr=Math.min(COLS-1,c+1),rd=Math.max(0,r-1),ru=Math.min(ROWS-1,r+1);
-        act[idx(c,r,L)]=1;act[idx(cl,r,L)]=Math.max(act[idx(cl,r,L)],0.6);act[idx(cr,r,L)]=Math.max(act[idx(cr,r,L)],0.6);
-        act[idx(c,rd,L)]=Math.max(act[idx(c,rd,L)],0.6);act[idx(c,ru,L)]=Math.max(act[idx(c,ru,L)],0.6);
+      for(let d=0; d<D; d++) H[o+d] = outv[d];
+      if(i === focusTok) flLayer[L] = colorVal(i);
+
+      // structured deflection from the updated representation (drives visual motion)
+      TVX[i] += outv[0]*1.6; TVY[i] += outv[1]*1.6; TPUL[i] = 1;
+
+      // light up the cells the token passes through (in focus mode, only the followed token)
+      if(!focusOn || i === focusTok){
+        const cl=Math.max(0,c-1), cr=Math.min(COLS-1,c+1), rd=Math.max(0,r-1), ru=Math.min(ROWS-1,r+1);
+        act[idx(c,r,L)] = 1;
+        act[idx(cl,r,L)] = Math.max(act[idx(cl,r,L)], 0.6);
+        act[idx(cr,r,L)] = Math.max(act[idx(cr,r,L)], 0.6);
+        act[idx(c,rd,L)] = Math.max(act[idx(c,rd,L)], 0.6);
+        act[idx(c,ru,L)] = Math.max(act[idx(c,ru,L)], 0.6);
       }
-      // output stage at the final layer: logits -> softmax(T) -> sample a bin
-      if(L===LAYERS-1){
+
+      // --- output stage at the final layer: logits -> softmax(T) -> sample a bin ---
+      // (lg/p are allocated here per exiting token; KOUT is small so the cost is negligible)
+      if(L === LAYERS-1){
         let mx=-1e9; const lg=new Float32Array(KOUT);
-        for(let b=0;b<KOUT;b++){let s=0;for(let d=0;d<D;d++)s+=H[o+d]*BIN[b*D+d];lg[b]=s;if(s>mx)mx=s;}
-        for(let b=0;b<KOUT;b++) aggLog[b]=aggLog[b]*0.9+lg[b]*0.1;
+        for(let b=0; b<KOUT; b++){ let s=0; for(let d=0; d<D; d++) s += H[o+d]*BIN[b*D+d]; lg[b]=s; if(s>mx) mx=s; }
+        for(let b=0; b<KOUT; b++) aggLog[b] = aggLog[b]*0.9 + lg[b]*0.1;   // EMA for the distribution chart
         let sum=0; const p=new Float32Array(KOUT);
-        for(let b=0;b<KOUT;b++){p[b]=Math.exp((lg[b]-mx)/temp);sum+=p[b];}
+        for(let b=0; b<KOUT; b++){ p[b]=Math.exp((lg[b]-mx)/temp); sum+=p[b]; }
         let rv=Math.random()*sum, acc=0, pick=0;
-        for(let b=0;b<KOUT;b++){acc+=p[b];if(rv<=acc){pick=b;break;}}
-        TBIN[i]=pick;
+        for(let b=0; b<KOUT; b++){ acc+=p[b]; if(rv<=acc){ pick=b; break; } }
+        TBIN[i] = pick;
       }
     }
     return inField;
@@ -574,6 +673,7 @@
     for(let L=0;L<LAYERS;L++){const hh=(cnt[L]/mx)*(h-3);c.fillStyle='rgba(125,211,252,0.85)';c.fillRect(L*bw+2,h-hh,bw-4,hh);
       c.fillStyle='rgba(125,211,252,0.18)';c.fillRect(L*bw+2,1,bw-4,h-2);}}
 
+  // mini attention heatmap: recompute attention among the tokens currently near the middle layer, for the selected head
   function drawHeat(){const {c,w,h}=AHEAT;c.clearRect(0,0,w,h);
     let sel=[];for(let i=0;i<NTOK&&sel.length<HEAT_M;i++){if(TACT[i]&&Math.abs(TZ[i]-layerZ[LH])<ATT_BAND*1.6)sel.push(i);}
     sel.sort((a,b)=>TPOS[a]-TPOS[b]);
@@ -596,12 +696,23 @@
     ctx.lineWidth=1;ctx.strokeStyle='rgba(60,76,110,0.40)';const w=COLS*GAP,h=ROWS*GAP;
     for(let L=0;L<LAYERS;L++){const z=layerZ[L],pts=[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]];ctx.beginPath();
       for(let k=0;k<4;k++){if(project(pts[k][0],pts[k][1],z)){k?ctx.lineTo(sxo,syo):ctx.moveTo(sxo,syo);}}ctx.closePath();ctx.stroke();}
-    order.sort((a,b)=>dz[b]-dz[a]);const near=dist-MAXR,far=dist+MAXR,fb=1+flash*0.5;
-    for(let oi=0;oi<COUNT;oi++){const i=order[oi];if(dz[i]>=1e9)continue;let v=disp[i];if(v>1)v=1;else if(v<-1)v=-1;
-      const mag=Math.abs(v),li=lutIdx(v),fog=Math.max(0.16,Math.min(1,(far-dz[i])/(far-near))),a=act[i],bb=(0.55+0.35*mag)*fog*fb*fdim;
-      let R=LUT[li]*bb,G=LUT[li+1]*bb,B=LUT[li+2]*bb;if(a>0.02){R+=a*110*fog;G+=a*200*fog;B+=a*255*fog;}
-      R=R>255?255:R|0;G=G>255?255:G|0;B=B>255?255:B|0;const size=sc[i]*(0.18+mag*0.36+a*0.30);
-      ctx.fillStyle='rgb('+R+','+G+','+B+')';ctx.fillRect(sx[i]-size/2,sy[i]-size/2,size,size);}
+    // draw weight cells back-to-front, blending the viridis base color with cyan activation light
+    order.sort((a,b)=>dz[b]-dz[a]);
+    const near=dist-MAXR, far=dist+MAXR, fb=1+flash*0.5;
+    for(let oi=0; oi<COUNT; oi++){
+      const i=order[oi]; if(dz[i]>=1e9) continue;
+      let v=disp[i]; if(v>1)v=1; else if(v<-1)v=-1;
+      const mag=Math.abs(v), li=lutIdx(v);
+      const fog=Math.max(0.16,Math.min(1,(far-dz[i])/(far-near)));   // depth fade
+      const a=act[i];                                                // activation, 0..1
+      const bb=(0.55+0.35*mag)*fog*fb*fdim;                          // base brightness
+      let R=LUT[li]*bb, G=LUT[li+1]*bb, B=LUT[li+2]*bb;
+      if(a>0.02){ R+=a*110*fog; G+=a*200*fog; B+=a*255*fog; }        // add activation glow
+      R=R>255?255:R|0; G=G>255?255:G|0; B=B>255?255:B|0;
+      const size=sc[i]*(0.18+mag*0.36+a*0.30);
+      ctx.fillStyle='rgb('+R+','+G+','+B+')';
+      ctx.fillRect(sx[i]-size/2, sy[i]-size/2, size, size);
+    }
 
     ctx.globalCompositeOperation='lighter';const lv=PREC[prec].levels;
     if(focusOn&&pbN>1){
@@ -620,9 +731,15 @@
           ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al+')';
           if(project(TX[j],TY[j],TZ[j])){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(sxo,syo);ctx.stroke();}}
         project(TX[i],TY[i],TZ[i]);}
+      // token color: after the output layer use its sampled bin, otherwise its (quantized) latent color
       let R,G,B;
-      if(TBIN[i]>=0&&TZ[i]>HZ){const li=(TBIN[i]/(KOUT-1)*255|0)*3;R=Math.min(255,LUT[li]+40);G=Math.min(255,LUT[li+1]+40);B=Math.min(255,LUT[li+2]+40);}
-      else{const li=lutIdx(quantize(colorVal(i),lv));R=Math.min(255,LUT[li]+40+pul*60);G=Math.min(255,LUT[li+1]+40+pul*60);B=Math.min(255,LUT[li+2]+40+pul*60);}
+      if(TBIN[i]>=0 && TZ[i]>HZ){
+        const li=(TBIN[i]/(KOUT-1)*255|0)*3;
+        R=Math.min(255,LUT[li]+40); G=Math.min(255,LUT[li+1]+40); B=Math.min(255,LUT[li+2]+40);
+      } else {
+        const li=lutIdx(quantize(colorVal(i),lv));
+        R=Math.min(255,LUT[li]+40+pul*60); G=Math.min(255,LUT[li+1]+40+pul*60); B=Math.min(255,LUT[li+2]+40+pul*60);
+      }
       if(THAS[i]){ctx.strokeStyle='rgba('+R+','+G+','+B+','+(0.42*fog)+')';ctx.lineWidth=Math.max(0.6,s*0.045);ctx.beginPath();ctx.moveTo(TPX[i],TPY[i]);ctx.lineTo(cx,cy);ctx.stroke();}
       const fk=(focusOn&&i===focusTok)?2.0:1; const hr=Math.min(4.2,Math.max(0.7,s*0.06))*(1+pul*0.8)*fk;
       ctx.fillStyle='rgba('+R+','+G+','+B+','+(0.92*fog)+')';ctx.beginPath();ctx.arc(cx,cy,hr,0,6.283);ctx.fill();
@@ -632,8 +749,8 @@
     ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
     if(glow){
       glowCtx.setTransform(1,0,0,1,0,0); glowCtx.clearRect(0,0,GW,GH);
-      glowCtx.filter='blur(5px)'; glowCtx.drawImage(cv,0,0,GW,GH); glowCtx.filter='none';
-      ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.45;
+      glowCtx.filter='blur('+GLOW_BLUR_PX+'px)'; glowCtx.drawImage(cv,0,0,GW,GH); glowCtx.filter='none';
+      ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=GLOW_ALPHA;
       ctx.drawImage(glowCv,0,0,W,H_); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
     }
     if(showLabels) drawLabels();
@@ -754,8 +871,14 @@
   let last=performance.now(), tick=0, fcur=0;
   function frame(now){
     const dt=Math.min(0.05,(now-last)/1000);last=now;
-    if(autorot&&!drag) ay+=dt*0.10;
-    if(tourTo&&!drag){const da=((tourTo.ay-ay+Math.PI*3)%(Math.PI*2))-Math.PI;ay+=da*0.07;ax+=(tourTo.ax-ax)*0.07;dist+=(tourTo.dist-dist)*0.07;setFoc();}
+    if(autorot&&!drag) ay += dt*AUTOROT_SPEED;
+    if(tourTo&&!drag){
+      const da=((tourTo.ay-ay+Math.PI*3)%(Math.PI*2))-Math.PI;   // shortest angular path to target yaw
+      ay   += da*TOUR_EASE;
+      ax   += (tourTo.ax-ax)*TOUR_EASE;
+      dist += (tourTo.dist-dist)*TOUR_EASE;
+      setFoc();
+    }
     if(!paused){fcur=stepTokens(dt);updateField();if(focusOn)updateFocus();}
     else{for(let i=0;i<COUNT;i++){if(project(X[i],Y[i],Z[i])){sx[i]=sxo;sy[i]=syo;sc[i]=sco;dz[i]=dzo;}else dz[i]=1e9;}}
     draw();
