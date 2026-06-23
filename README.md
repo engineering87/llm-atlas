@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://calm-water-0a4775e10.7.azurestaticapps.net"><img src="https://img.shields.io/badge/live%20demo-online-3FB950?logo=microsoftazure&logoColor=white" alt="Live demo"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3FB950" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/dependencies-none-7DD3FC" alt="No dependencies">
   <img src="https://img.shields.io/badge/build-none-FF9E4A" alt="No build step">
@@ -13,6 +14,10 @@
 <h1 align="center">LLM Atlas</h1>
 
 <p align="center"><em>An interactive, in-browser visualization of how a transformer language model actually works.</em></p>
+
+<p align="center">
+  <strong><a href="https://calm-water-0a4775e10.7.azurestaticapps.net">▶ Open the live demo</a></strong>
+</p>
 
 ---
 
@@ -36,9 +41,9 @@ Every stage of a transformer block, rendered live and inspectable:
 
 It is a single self-contained file. Pick whichever is easiest:
 
+- **Live demo.** Open [calm-water-0a4775e10.7.azurestaticapps.net](https://calm-water-0a4775e10.7.azurestaticapps.net), hosted on Azure Static Web Apps and redeployed automatically on every push to `main`.
 - **Open directly.** Double click `index.html`, or drag it into any modern browser.
 - **Serve locally.** From the project folder, run `python3 -m http.server` and open `http://localhost:8000`.
-- **GitHub Pages.** Enable Pages on the repository and the demo goes live at `https://engineering87.github.io/llm-atlas/`.
 
 No installation, no dependencies, no API keys.
 
