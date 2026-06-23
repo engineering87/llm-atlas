@@ -20,12 +20,6 @@
 
 It is built to work on two levels at once: it should pull in someone who has never thought about how these models work, through the live, glowing graphics, and it should still satisfy someone who knows the architecture, because the mechanisms underneath are faithful.
 
-<p align="center">
-  <img src="assets/preview.gif" alt="LLM Atlas preview" width="80%">
-  <br>
-  <sub>Preview is a placeholder. See <a href="#recording-the-preview">Recording the preview</a> to capture the live animation.</sub>
-</p>
-
 ## What it shows
 
 Every stage of a transformer block, rendered live and inspectable:
@@ -70,17 +64,6 @@ No installation, no dependencies, no API keys.
 The mechanisms that matter are real: subword-style tokenization, positional encoding, scaled dot-product multi-head attention, causal masking, residual per-layer transforms, symmetric weight quantization, and temperature sampling. The quantization is exact in its deterministic part, and the memory figure for the weights is a real multiplication of parameters by bytes.
 
 It is also, deliberately, a reduced model. The latent vector is six-dimensional rather than thousands, the projection weights are fixed rather than trained, attention is computed over co-located tokens rather than the full sequence, and the throughput and KV figures are proportional rather than measured. The goal is understanding, not benchmarking.
-
-## Recording the preview
-
-The animation is live, so the preview GIF has to be captured from a running browser. Open `index.html`, let the scene settle, then record a few seconds with any screen capture tool, and save it over `assets/preview.gif`:
-
-- **Windows:** ScreenToGif
-- **macOS:** Kap, or QuickTime plus a converter
-- **Linux:** Peek
-- **Cross-platform:** record a short `.mp4`, then `ffmpeg -i clip.mp4 -vf "fps=20,scale=1000:-1:flags=lanczos" assets/preview.gif`
-
-A six to ten second loop showing the tokens flowing, a precision switch, and the attention links works well.
 
 ## Author
 
