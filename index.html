@@ -88,8 +88,8 @@
   .inspect .rw .v{color:var(--dim)}
   .inspect .rw .e{width:34px;height:5px;border-radius:3px;background:rgba(251,113,133,.25);overflow:hidden}
   .inspect .rw .e i{display:block;height:100%;background:var(--p4)}
-  .fpanel{position:fixed;bottom:90px;top:auto;left:50%;transform:translateX(-50%);z-index:11;display:none;align-items:center;gap:12px;
-    background:rgba(10,12,20,.6);border:1px solid var(--line);border-radius:10px;padding:9px 14px;backdrop-filter:blur(8px)}
+  .fpanel{display:none;align-items:center;gap:12px;margin-bottom:2px;
+    background:rgba(10,12,20,.6);border:1px solid var(--line);border-radius:10px;padding:9px 14px;backdrop-filter:blur(8px);pointer-events:auto}
   .fpanel.on{display:flex}
   .fpanel .ttl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--hi)}
   .fpanel .sw{display:flex;gap:3px;align-items:center}
@@ -185,11 +185,6 @@
     <div class="grp"><button id="tprev">‹ back</button><button id="tnext">next ›</button></div>
   </div>
 </div>
-<div class="fpanel" id="fpanel">
-  <span class="ttl" id="f-id">token</span>
-  <div class="sw"><b>layers</b><span class="c" id="fl0"></span><span class="c" id="fl1"></span><span class="c" id="fl2"></span><span class="c" id="fl3"></span><span class="c" id="fl4"></span><span class="c" id="fl5"></span></div>
-  <span class="arrow">→</span><div class="sw"><b>out</b><span class="c" id="fout"></span></div>
-</div>
 <div class="help" id="helpov">
   <div class="box">
     <h3>LLM Atlas</h3>
@@ -254,6 +249,11 @@
   </div>
   <div class="corner bc">
     <div class="ctrls">
+      <div class="fpanel" id="fpanel">
+        <span class="ttl" id="f-id">token</span>
+        <div class="sw"><b>layers</b><span class="c" id="fl0"></span><span class="c" id="fl1"></span><span class="c" id="fl2"></span><span class="c" id="fl3"></span><span class="c" id="fl4"></span><span class="c" id="fl5"></span></div>
+        <span class="arrow">→</span><div class="sw"><b>out</b><span class="c" id="fout"></span></div>
+      </div>
       <div class="seg" id="seg" role="group" aria-label="precision">
         <button data-k="fp32">FP32</button><button data-k="fp16">FP16</button>
         <button data-k="int8">INT8</button><button data-k="int4" aria-pressed="true">INT4</button>
