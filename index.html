@@ -1,0 +1,757 @@
+<!doctype html>
+<!--
+  LLM Atlas — an interactive, in-browser visualization of how a transformer language model works.
+  Tokenization, embeddings, multi-head attention, per-layer transforms, quantization, sampling, and the KV cache,
+  all rendered live on a custom Canvas 2D engine. No build step, no dependencies: open this file in a browser.
+
+  Author:     Francesco Del Re  (https://github.com/engineering87)
+  Repository: https://github.com/engineering87/llm-atlas
+  License:    MIT
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>LLM Atlas — by engineering87</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+  :root{
+    --mono:'JetBrains Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
+    --ink:#D7DCE6; --dim:#6B7388; --faint:#444B60; --line:rgba(120,135,170,.16);
+    --p32:#5EEAD4; --p16:#7DD3FC; --p8:#FCD34D; --p4:#FB7185; --hi:#9DE0FF;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#05060B;color:var(--ink);font-family:var(--mono);overflow:hidden}
+  #c{position:fixed;inset:0;display:block;touch-action:none}
+  .hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+  .corner{position:absolute;padding:16px 18px}
+  .tl{top:0;left:0}.tr{top:0;right:0;text-align:right}
+  .bc{left:50%;bottom:14px;transform:translateX(-50%);text-align:center}
+  .bl{left:0;bottom:0;padding:12px 18px}
+  .br{right:0;bottom:0;padding:12px 18px;text-align:right}
+  .title{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:.04em;color:#EAF0FA}
+  .title .dot{color:var(--p32)}
+  .sub{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  .read{display:grid;gap:9px;margin-top:2px}
+  .r{display:flex;justify-content:flex-end;align-items:baseline;gap:10px}
+  .r .lab{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  .r .val{font-size:14px;font-weight:500;color:var(--ink);min-width:90px;text-align:right}
+  .r .val.acc{font-weight:600}
+  .ctrls{pointer-events:auto;display:inline-flex;flex-direction:column;align-items:center;gap:9px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;backdrop-filter:blur(6px);background:rgba(10,12,20,.45)}
+  .seg button{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;color:var(--dim);background:transparent;border:none;padding:9px 15px;cursor:pointer;transition:.16s;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:none}
+  .seg button:hover{color:var(--ink)}
+  .seg button[aria-pressed=true]{color:#05060B;font-weight:600}
+  .row2{display:flex;gap:9px;align-items:center;font-size:10.5px;color:var(--dim);letter-spacing:.08em;flex-wrap:wrap;justify-content:center}
+  .row2 .sl{display:inline-flex;align-items:center;gap:6px}
+  .row2 button{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--dim);background:rgba(10,12,20,.45);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;backdrop-filter:blur(6px);min-width:28px}
+  .row2 button:hover{color:var(--ink)}
+  .row2 button[aria-pressed=true]{color:var(--ink);border-color:var(--hi)}
+  input[type=range]{accent-color:var(--hi);width:92px;vertical-align:middle}
+  .cap{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  canvas.mini{display:block;border:1px solid var(--line);border-radius:6px;background:rgba(10,12,20,.4)}
+  .legend{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);line-height:1.8;margin-top:9px}
+  .legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .tag{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-top:7px}
+  .hint{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-top:7px}
+  .stack{display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+  .tc{top:0;left:50%;transform:translateX(-50%);text-align:center;max-width:60%}
+  .prompt-bar{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .prompt-bar input{font-family:var(--mono);font-size:13px;color:var(--ink);background:rgba(10,12,20,.5);border:1px solid var(--line);border-radius:9px;padding:8px 14px;width:340px;max-width:74vw;text-align:center;backdrop-filter:blur(6px)}
+  .prompt-bar input:focus{outline:1px solid var(--hi);border-color:transparent}
+  .chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:520px}
+  .chips .chip{font-family:var(--mono);font-size:11px;color:var(--ink);background:rgba(30,36,56,.7);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+  .topw{display:flex;flex-direction:column;gap:3px;margin-top:6px;align-items:flex-end}
+  .topw .w{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px}
+  .topw .w .nm{color:var(--ink);min-width:42px;text-align:right}
+  .topw .w .bar{height:7px;border-radius:4px;background:var(--hi);opacity:.85}
+  .topw .w .pc{color:var(--dim);min-width:34px;text-align:right;font-size:10px}
+  .inspect{position:fixed;z-index:13;display:none;background:rgba(9,11,18,.9);border:1px solid var(--line);border-radius:10px;padding:11px 13px;backdrop-filter:blur(8px);pointer-events:none;min-width:172px}
+  .inspect.on{display:block}
+  .inspect .h{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+  .inspect .rw{display:flex;justify-content:space-between;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;padding:2px 0}
+  .inspect .rw .f{color:var(--ink)}
+  .inspect .rw .v{color:var(--dim)}
+  .inspect .rw .e{width:34px;height:5px;border-radius:3px;background:rgba(251,113,133,.25);overflow:hidden}
+  .inspect .rw .e i{display:block;height:100%;background:var(--p4)}
+  .fpanel{position:fixed;bottom:90px;top:auto;left:50%;transform:translateX(-50%);z-index:11;display:none;align-items:center;gap:12px;
+    background:rgba(10,12,20,.6);border:1px solid var(--line);border-radius:10px;padding:9px 14px;backdrop-filter:blur(8px)}
+  .fpanel.on{display:flex}
+  .fpanel .ttl{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--hi)}
+  .fpanel .sw{display:flex;gap:3px;align-items:center}
+  .fpanel .sw b{font-size:9px;color:var(--faint);letter-spacing:.1em;margin-right:4px;font-weight:500}
+  .fpanel .c{width:15px;height:15px;border-radius:3px;border:1px solid rgba(255,255,255,.12)}
+  .fpanel .arrow{color:var(--faint);font-size:11px}
+  .help{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:rgba(4,5,11,.72);backdrop-filter:blur(3px)}
+  .help.on{display:flex}
+  .intro{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;
+    background:radial-gradient(120% 90% at 50% 38%, rgba(5,6,11,.30), rgba(5,6,11,.78) 70%);transition:opacity .6s}
+  .intro.gone{opacity:0;pointer-events:none}
+  .intro .big{font-family:var(--disp);font-weight:700;font-size:clamp(40px,8vw,84px);letter-spacing:-.02em;line-height:.95;
+    background:linear-gradient(90deg,#5EEAD4,#7DD3FC,#FF9E4A,#FF6BD6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .intro .hook{font-size:clamp(14px,2.2vw,18px);color:var(--ink);margin-top:16px;max-width:30ch;line-height:1.5}
+  .intro .meta{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--faint);margin-top:10px}
+  .intro .btns{display:flex;gap:12px;margin-top:32px;flex-wrap:wrap;justify-content:center}
+  .intro button{font-family:var(--mono);font-size:13px;letter-spacing:.08em;border-radius:10px;padding:13px 26px;cursor:pointer;border:1px solid var(--line)}
+  .intro .go{background:#EAF0FA;color:#05060B;border-color:transparent;font-weight:600}
+  .intro .alt{background:transparent;color:var(--ink)}
+  .intro button:hover{transform:translateY(-1px)}
+  .intro .credit{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--faint);margin-top:26px}
+  .intro .credit a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line)}
+  .intro .credit a:hover{color:var(--ink)}
+  .help .by{font-size:11px;color:var(--faint);margin-top:6px}
+  .help .by a{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line)}
+  .help .by a:hover{color:var(--ink)}
+  .credit-corner{margin-top:6px;pointer-events:auto}
+  .credit-corner a{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-decoration:none}
+  .credit-corner a:hover{color:var(--ink)}
+  .tour{position:fixed;bottom:150px;left:50%;transform:translateX(-50%);z-index:14;display:none;width:440px;max-width:88vw;
+    background:rgba(9,11,18,.82);border:1px solid var(--line);border-radius:12px;padding:16px 18px;backdrop-filter:blur(8px);pointer-events:auto}
+  .tour.on{display:block}
+  .tour .step{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--hi);margin-bottom:6px}
+  .tour .txt{font-size:13.5px;color:var(--ink);line-height:1.5;min-height:40px}
+  .tour .nav{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+  .tour .nav .grp{display:flex;gap:8px}
+  .tour button{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--ink);background:rgba(20,24,36,.7);border:1px solid var(--line);border-radius:8px;padding:7px 13px;cursor:pointer}
+  .tour button:hover{border-color:var(--hi)}
+  .tour button.gho{color:var(--dim);background:transparent}
+  .help .box{pointer-events:auto;max-width:520px;width:90%;background:#0C0F17;border:1px solid var(--line);border-radius:14px;padding:24px 26px}
+  .help h3{font-family:var(--disp);margin:0 0 4px;font-size:18px;color:#EAF0FA}
+  .help .s{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);margin-bottom:16px}
+  .help dl{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;margin:0;font-size:13px}
+  .help dt{color:var(--hi);font-weight:500;white-space:nowrap}
+  .help dd{margin:0;color:var(--ink);line-height:1.45}
+  .help .x{margin-top:18px;text-align:right}
+  .help .x button{font-family:var(--mono);font-size:12px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:8px 16px;cursor:pointer}
+  .help p{font-size:13px;color:var(--ink);line-height:1.55;margin:0 0 11px}
+  .help p b{color:var(--hi);font-weight:500}
+  .help .box.wide{max-width:560px;max-height:82vh;overflow-y:auto}
+  @media (max-width:860px){ .tl .mini,.br{display:none} .legend{display:none} }
+  @media (max-width:680px){
+    .tr{padding:10px 12px}.r .val{min-width:70px;font-size:12.5px}.r .lab{font-size:9px}
+    .title{font-size:14px}.seg button{padding:8px 10px;font-size:11.5px}.bl .mini{display:none}
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="inspect" id="inspect"></div>
+<div class="intro" id="intro">
+  <div class="big">LLM&nbsp;Atlas</div>
+  <div class="meta" style="margin-top:8px;margin-bottom:2px">by engineering87</div>
+  <div class="hook">See what actually happens inside a language model, as it processes a sentence in real time.</div>
+  <div class="meta">tokens · weights · attention · quantization</div>
+  <div class="btns">
+    <button class="go" id="introTour">Take the 60-second tour</button>
+    <button class="alt" id="introExplore">Just explore</button>
+  </div>
+  <div class="credit">Created by <a href="https://github.com/engineering87" target="_blank" rel="noopener">Francesco Del Re</a> · github.com/engineering87</div>
+</div>
+<div class="tour" id="tour">
+  <div class="step" id="tstep">step 1 / 8</div>
+  <div class="txt" id="ttext"></div>
+  <div class="nav">
+    <button class="gho" id="texit">exit tour</button>
+    <div class="grp"><button id="tprev">‹ back</button><button id="tnext">next ›</button></div>
+  </div>
+</div>
+<div class="fpanel" id="fpanel">
+  <span class="ttl" id="f-id">token</span>
+  <div class="sw"><b>layers</b><span class="c" id="fl0"></span><span class="c" id="fl1"></span><span class="c" id="fl2"></span><span class="c" id="fl3"></span><span class="c" id="fl4"></span><span class="c" id="fl5"></span></div>
+  <span class="arrow">→</span><div class="sw"><b>out</b><span class="c" id="fout"></span></div>
+</div>
+<div class="help" id="helpov">
+  <div class="box">
+    <h3>LLM Atlas</h3>
+    <div class="s">how to read the simulation</div>
+    <dl>
+      <dt>terrain</dt><dd>the six stacked grids are weight matrices (the dense layers). Color and height map each weight value.</dd>
+      <dt>tokens</dt><dd>a structured input sequence enters at the front; each particle carries a latent vector that is transformed at every layer.</dd>
+      <dt>cyan flare</dt><dd>activation: cells lighting up as tokens pass through them.</dd>
+      <dt>colored links</dt><dd>attention: a token attending to others, one color per head.</dd>
+      <dt>FP32 … INT4</dt><dd>quantization. Fewer bits per weight, less memory, coarser outputs. Watch the weight histogram collapse.</dd>
+      <dt>speed / density</dt><dd>how fast and how many tokens flow through the field.</dd>
+      <dt>temp</dt><dd>sampling temperature at the output. Low concentrates the next-token distribution, high spreads it.</dd>
+      <dt>ATTENTION</dt><dd>toggle inter-token attention on or off.</dd>
+      <dt>HEAD</dt><dd>cycle which attention head the heatmap shows.</dd>
+      <dt>FOCUS</dt><dd>follow a single token and watch its representation change across the six layers.</dd>
+    </dl>
+    <div class="x"><button id="helpclose">close</button></div>
+  </div>
+</div>
+<div class="help" id="aboutov">
+  <div class="box wide">
+    <h3>What you are looking at</h3>
+    <div class="s">a simplified transformer, running live</div>
+    <p>This is a small, illustrative model of how a language model processes text. It is not a real network running inference, but every mechanism shown is structurally faithful to a real transformer block.</p>
+    <p><b>The lattice.</b> The six stacked grids are weight matrices, one per layer. These are the learned parameters: billions of numbers in a real model. Color and height encode each weight value.</p>
+    <p><b>The flux.</b> Tokens enter as a structured input sequence. Each one carries a small latent vector, an embedding. As a token crosses a layer it is transformed by that layer's weights, so its state and color change at every step. Switch on FOCUS to follow one token and watch its representation evolve across the six layers.</p>
+    <p><b>Attention.</b> At each layer a token does not act alone. It looks at the other tokens in that layer through query and key projections, attends most to those whose keys match its query, and blends in their values. Three heads read different relationships, shown as three colors of links and selectable in the heatmap.</p>
+    <p><b>Quantization.</b> The FP32 to INT4 buttons change how many bits represent each weight. Fewer bits means less memory and faster compute, but a coarser model: the weight histogram collapses, and the range of possible outputs shrinks with it.</p>
+    <p><b>Sampling.</b> At the output, the final state becomes a distribution over next-token bins. Temperature reshapes it: low temperature concentrates the choice, high temperature spreads it, which you can see in the next-token chart and in the color variety of exiting tokens.</p>
+    <p><b>Memory.</b> The KV cache grows with the number of tokens in context, which is why long contexts cost memory. The per-layer bars show where that cache currently sits.</p>
+    <p style="color:var(--dim)">Scale is reduced for clarity: a six-dimensional latent instead of thousands, fixed projections instead of trained ones, and memory and throughput figures that are proportional rather than measured.</p>
+    <div class="by">Built by <a href="https://github.com/engineering87" target="_blank" rel="noopener">Francesco Del Re</a> · github.com/engineering87</div>
+    <div class="x"><button id="aboutclose">close</button></div>
+  </div>
+</div>
+<div class="hud">
+  <div class="corner tc">
+    <div class="prompt-bar">
+      <input id="prompt" type="text" spellcheck="false" value="the cat sat on the warm mat and" aria-label="prompt" />
+      <div class="chips" id="chips"></div>
+    </div>
+  </div>
+  <div class="corner tl">
+    <div class="title">LLM ATLAS<span class="dot"> ·</span></div>
+    <div class="sub">embedding flux · attention · quantization · sampling</div>
+    <div style="margin-top:14px">
+      <div class="cap" id="heatcap">attention · layer 3</div>
+      <canvas id="aheat" class="mini" width="104" height="104" style="width:104px;height:104px"></canvas>
+    </div>
+  </div>
+  <div class="corner tr">
+    <div class="read">
+      <div class="r"><span class="lab">precision</span><span class="val acc" id="v-prec" style="color:var(--p4)">INT4</span></div>
+      <div class="r"><span class="lab">bytes / param</span><span class="val" id="v-bpp">0.5</span></div>
+      <div class="r"><span class="lab">weight levels</span><span class="val" id="v-lvl">16</span></div>
+      <div class="r"><span class="lab">memory · 7B ref</span><span class="val" id="v-mem">3.5 GB</span></div>
+      <div class="r"><span class="lab">kv cache*</span><span class="val" id="v-kv">0 KB</span></div>
+      <div class="r"><span class="lab">temperature</span><span class="val" id="v-temp">0.70</span></div>
+      <div class="r"><span class="lab">rel. throughput*</span><span class="val" id="v-thr">2.6×</span></div>
+      <div class="r"><span class="lab">tokens in field</span><span class="val" id="v-flux">0</span></div>
+    </div>
+  </div>
+  <div class="corner bc">
+    <div class="ctrls">
+      <div class="seg" id="seg" role="group" aria-label="precision">
+        <button data-k="fp32">FP32</button><button data-k="fp16">FP16</button>
+        <button data-k="int8">INT8</button><button data-k="int4" aria-pressed="true">INT4</button>
+      </div>
+      <div class="row2">
+        <span class="sl">speed<input type="range" id="rate" min="0" max="100" value="50"></span>
+        <span class="sl">density<input type="range" id="dens" min="5" max="100" value="55"></span>
+        <span class="sl">temp<input type="range" id="temp" min="10" max="200" value="70"></span>
+      </div>
+      <div class="row2">
+        <button id="attn" aria-pressed="true">ATTENTION</button>
+        <button id="causal" aria-pressed="true">CAUSAL</button>
+        <button id="head">HEAD 1</button>
+        <button id="zout" aria-label="zoom out">−</button><button id="zin" aria-label="zoom in">+</button>
+        <button id="lbl" aria-pressed="true">LABELS</button>
+        <button id="focus">FOCUS</button><button id="tour-btn">TOUR</button><button id="about">ABOUT</button><button id="help">?</button>
+        <button id="glow" aria-pressed="true">GLOW</button>
+        <button id="pause">PAUSE</button><button id="reset">RESET</button>
+      </div>
+      <div class="hint">drag to orbit · scroll or ± to zoom</div>
+    </div>
+  </div>
+  <div class="corner bl">
+    <div class="cap">weight value distribution</div>
+    <canvas id="hist" class="mini" width="200" height="52" style="width:200px;height:52px"></canvas>
+    <div class="legend">
+      <span><i style="background:#21908d"></i>terrain = weights · cyan = activation</span><br>
+      <span><i style="background:#FF6BD6"></i><i style="background:#FF9E4A"></i><i style="background:#A8F0FF"></i> attention heads · hue = token state</span>
+    </div>
+    <div class="tag">illustrative · *kv, memory, throughput approximate</div>
+    <div class="credit-corner"><a href="https://github.com/engineering87" target="_blank" rel="noopener">Francesco Del Re · github.com/engineering87</a></div>
+  </div>
+  <div class="corner br">
+    <div class="stack">
+      <div>
+        <div class="cap">next-token distribution · temperature</div>
+        <canvas id="odist" class="mini" width="190" height="48" style="width:190px;height:48px"></canvas>
+        <div class="topw" id="topw"></div>
+      </div>
+      <div>
+        <div class="cap">kv cache occupancy · per layer</div>
+        <canvas id="kvb" class="mini" width="190" height="34" style="width:190px;height:34px"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const cv=document.getElementById('c'); const ctx=cv.getContext('2d');
+  const glowCv=document.createElement('canvas'); const glowCtx=glowCv.getContext('2d'); let glow=true, GW=1, GH=1;
+  if(!ctx){ document.body.innerHTML='<p style="padding:24px">Canvas not available.</p>'; return; }
+
+  // ---------- config ----------
+  const COLS=14, ROWS=14, LAYERS=6, COUNT=COLS*ROWS*LAYERS;
+  const GAP=1.0, LGAP=5.0;
+  const HX=(COLS-1)*GAP/2, HY=(ROWS-1)*GAP/2, HZ=(LAYERS-1)*LGAP/2;
+  const NTOK=210, TRAVEL=HZ+9, MAXR=Math.hypot(HX,HY,HZ);
+  const D=6;                       // latent dimension
+  const ATT_K=4, ATT_BAND=2.2, ATT_BETA=0.45, ATT_SCALE=6.0;
+  const KOUT=24;                   // output vocabulary bins
+  const HEAT_M=12, LH=Math.floor(LAYERS/2);
+  const HEADS=3, DH=2, ATT_LINKS=HEADS, ATT_SHARP=3.5;  // multi-head attention
+  const HEADRGB=[[255,107,214],[255,158,74],[168,240,255]];
+  let selHead=0;
+  const PREC={
+    fp32:{name:'FP32',bpp:4,  levels:1e6, thr:'0.9×', color:'#5EEAD4', lvl:'≈ continuous'},
+    fp16:{name:'FP16',bpp:2,  levels:2048,thr:'1.0×', color:'#7DD3FC', lvl:'≈ 65k'},
+    int8:{name:'INT8',bpp:1,  levels:256, thr:'1.7×', color:'#FCD34D', lvl:'256'},
+    int4:{name:'INT4',bpp:0.5,levels:16,  thr:'2.6×', color:'#FB7185', lvl:'16'}
+  };
+  let prec='int4', paused=false, rate=0.50, density=0.55, temp=0.70, attnOn=true, causal=true, showLabels=true, flash=0;
+
+  // ---------- rng + viridis ----------
+  function mul32(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  const rnd=mul32(12345);
+  const VIR=[[68,1,84],[59,82,139],[33,144,141],[94,201,98],[253,231,37]];
+  const LUT=new Uint8Array(256*3);
+  for(let i=0;i<256;i++){const t=i/255,x=t*(VIR.length-1),k=Math.floor(x),f=x-k,a=VIR[k],b=VIR[Math.min(k+1,VIR.length-1)];LUT[i*3]=a[0]+(b[0]-a[0])*f;LUT[i*3+1]=a[1]+(b[1]-a[1])*f;LUT[i*3+2]=a[2]+(b[2]-a[2])*f;}
+  function lutIdx(v){let t=(v+1)/2;if(t<0)t=0;else if(t>1)t=1;return (t*255|0)*3;}
+
+  // color projection axes + output "unembedding" vectors
+  const P1=new Float32Array(D), P2=new Float32Array(D);
+  for(let d=0;d<D;d++){P1[d]=(d===0?1:0)+0.35*(rnd()*2-1);P2[d]=(d===1?1:0)+0.35*(rnd()*2-1);}
+  const BIN=new Float32Array(KOUT*D);
+  for(let b=0;b<KOUT;b++)for(let d=0;d<D;d++)BIN[b*D+d]=rnd()*2-1;
+  // multi-head attention projections (fixed "learned" weights), quantized per precision
+  const sQ=1/Math.sqrt(D);
+  const WQ=new Float32Array(HEADS*DH*D), WK=new Float32Array(HEADS*DH*D), WV=new Float32Array(HEADS*DH*D), WO=new Float32Array(D*D);
+  for(let i=0;i<WQ.length;i++){WQ[i]=(rnd()*2-1)*sQ;WK[i]=(rnd()*2-1)*sQ;WV[i]=(rnd()*2-1)*sQ;}
+  for(let i=0;i<WO.length;i++) WO[i]=(rnd()*2-1)*sQ;
+  const WQq=new Float32Array(WQ.length), WKq=new Float32Array(WK.length), WVq=new Float32Array(WV.length), WOq=new Float32Array(WO.length);
+  function quantizeProj(){const lv=PREC[prec].levels;for(let i=0;i<WQ.length;i++){WQq[i]=quantize(WQ[i],lv);WKq[i]=quantize(WK[i],lv);WVq[i]=quantize(WV[i],lv);}for(let i=0;i<WO.length;i++)WOq[i]=quantize(WO[i],lv);}
+
+  // ---------- lattice ----------
+  const X=new Float32Array(COUNT), Y=new Float32Array(COUNT), Z=new Float32Array(COUNT);
+  const base=new Float32Array(COUNT), disp=new Float32Array(COUNT), targ=new Float32Array(COUNT), act=new Float32Array(COUNT);
+  const sx=new Float32Array(COUNT), sy=new Float32Array(COUNT), sc=new Float32Array(COUNT), dz=new Float32Array(COUNT);
+  const order=new Array(COUNT); for(let i=0;i<COUNT;i++) order[i]=i;
+  const idx=(c,r,L)=>(L*ROWS+r)*COLS+c;
+  let n=0;
+  for(let L=0;L<LAYERS;L++)for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    X[n]=c*GAP-HX; Y[n]=r*GAP-HY; Z[n]=L*LGAP-HZ;
+    let v=Math.sin(c*0.55+L*1.1)*0.5+Math.cos(r*0.5-L*0.8)*0.45+Math.sin((c+r)*0.3)*0.18;
+    v=Math.max(-1,Math.min(1,v*0.8)); base[n]=v;disp[n]=v;targ[n]=v; n++;
+  }
+  function quantize(v,levels){if(levels>=1e6)return v;const s=2/levels;return Math.round(v/s)*s;}
+  function recompute(){const lv=PREC[prec].levels;for(let i=0;i<COUNT;i++)targ[i]=quantize(base[i],lv);quantizeProj();}
+  recompute();
+  const layerZ=[];for(let L=0;L<LAYERS;L++)layerZ.push(L*LGAP-HZ);
+  function colAt(x){let c=Math.round((x+HX)/GAP);return c<0?0:c>COLS-1?COLS-1:c;}
+  function rowAt(y){let r=Math.round((y+HY)/GAP);return r<0?0:r>ROWS-1?ROWS-1:r;}
+
+  // ---------- tokens ----------
+  const GX=21, GY=10;
+  const TX=new Float32Array(NTOK), TY=new Float32Array(NTOK), TZ=new Float32Array(NTOK);
+  const TVX=new Float32Array(NTOK), TVY=new Float32Array(NTOK), TPZ=new Float32Array(NTOK);
+  const H=new Float32Array(NTOK*D), H0=new Float32Array(NTOK*D);
+  const TLX=new Float32Array(NTOK), TLY=new Float32Array(NTOK), TZOF=new Float32Array(NTOK), TPUL=new Float32Array(NTOK);
+  const TPX=new Float32Array(NTOK), TPY=new Float32Array(NTOK), THAS=new Uint8Array(NTOK);
+  const THR=new Float32Array(NTOK), TACT=new Uint8Array(NTOK), TBIN=new Int16Array(NTOK);
+  const TNB=new Int16Array(NTOK*ATT_LINKS), TNW=new Float32Array(NTOK*ATT_LINKS), TNBN=new Uint8Array(NTOK);
+  const TPOS=new Int16Array(NTOK), TROW=new Int16Array(NTOK);
+  (function initLanes(){
+    let i=0;
+    for(let ly=0;ly<GY;ly++)for(let lx=0;lx<GX;lx++){
+      TPOS[i]=lx; TROW[i]=ly;
+      TLX[i]=(lx/(GX-1)*2-1)*HX*0.92; TLY[i]=(ly/(GY-1)*2-1)*HY*0.92;
+      TZOF[i]=((lx*GY+ly)/NTOK)*TRAVEL*2; THR[i]=((Math.imul(i,2654435761)>>>0)%1000)/1000;
+      i++;
+    }
+  })();
+  // ---- tokenizer (approximate subword) + token embeddings + positional encoding ----
+  let seqTokens=[], seqLen=0;
+  const WORDS=['the','a','of','to','and','in','is','that','it','was','for','on','with','as','at','by','from','this','they','are','not','have','be','more'];
+  function tokenize(text){
+    const parts=text.toLowerCase().match(/[a-z0-9]+|[^\sa-z0-9]/g)||[]; const out=[];
+    for(const w of parts){ if(w.length<=4){out.push(w);} else { let i=0; while(i<w.length){ const len=i===0?Math.min(4,w.length-i):Math.min(3,w.length-i); out.push((i>0?'##':'')+w.slice(i,i+len)); i+=len; } } }
+    return out;
+  }
+  function strHash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h>>>0;}
+  function embedFor(s){const r=mul32(strHash(s)||1);const v=new Float32Array(D);for(let d=0;d<D;d++)v[d]=(r()*2-1)*0.8;return v;}
+  function addPos(o,pos){for(let d=0;d<D;d++){const f=Math.pow(10000,-(d-(d&1))/D);H0[o+d]+=0.32*((d&1)?Math.cos(pos*f):Math.sin(pos*f));}}
+  function setSentence(text){
+    seqTokens=tokenize(text).slice(0,GX); seqLen=seqTokens.length;
+    for(let i=0;i<NTOK;i++){ const o=i*D, pos=TPOS[i];
+      if(pos<seqLen){ const e=embedFor(seqTokens[pos]); for(let d=0;d<D;d++) H0[o+d]=e[d]; addPos(o,pos); }
+      else { for(let d=0;d<D;d++) H0[o+d]=0; } }
+    for(let i=0;i<NTOK;i++) spawn(i);
+    if(typeof focusTok!=='undefined') focusTok=-1;
+    renderChips();
+  }
+  function renderChips(){ const el=document.getElementById('chips'); if(!el) return; el.innerHTML='';
+    for(let p=0;p<seqLen;p++){ const sp=document.createElement('span'); sp.className='chip'; sp.textContent=seqTokens[p]; el.appendChild(sp); } }
+  function spawn(i){
+    TX[i]=TLX[i];TY[i]=TLY[i];TZ[i]=-TRAVEL-TZOF[i];TPZ[i]=TZ[i];
+    TVX[i]=0;TVY[i]=0;TPUL[i]=0;THAS[i]=0;TBIN[i]=-1;
+    for(let d=0;d<D;d++) H[i*D+d]=H0[i*D+d];
+  }
+  function isActive(i){return TPOS[i]<seqLen && THR[i]<density;}
+  function colorVal(i){let u=0,v=0;const o=i*D;for(let d=0;d<D;d++){u+=H[o+d]*P1[d];v+=H[o+d]*P2[d];}return Math.atan2(v,u)/Math.PI;}
+  // focus mode: follow one token and record its trajectory + per-layer state
+  let focusOn=false, focusTok=-1, lastFZ=0, pbN=0, pbHead=0; const PN=150;
+  const PBX=new Float32Array(PN), PBY=new Float32Array(PN), PBZ=new Float32Array(PN);
+  const flLayer=new Float32Array(LAYERS); for(let L=0;L<LAYERS;L++) flLayer[L]=NaN;
+  function resetFocusPath(){pbN=0;pbHead=0;for(let L=0;L<LAYERS;L++)flLayer[L]=NaN;lastFZ=focusTok>=0?TZ[focusTok]:0;}
+  function pickFocus(){
+    let best=-1,bs=1e18;
+    for(let i=0;i<NTOK;i++){ if(!TACT[i]) continue; const z=TZ[i]; let s;
+      if(z>=-HZ-1.5 && z<=HZ) s=z+HZ;            // entering/inside the stack: pick the earliest
+      else if(z<-HZ-1.5) s=1e6+(-z);             // still approaching: prefer the closest to entry
+      else s=2e6+z;                               // already exited: lowest priority
+      if(s<bs){bs=s;best=i;} }
+    focusTok=best; resetFocusPath();
+  }
+  function updateFocus(){
+    if(focusTok<0||!TACT[focusTok]) pickFocus();
+    if(focusTok<0) return;
+    if(TZ[focusTok]<lastFZ-1){ pickFocus(); if(focusTok<0) return; }
+    lastFZ=TZ[focusTok];
+    PBX[pbHead]=TX[focusTok];PBY[pbHead]=TY[focusTok];PBZ[pbHead]=TZ[focusTok];
+    pbHead=(pbHead+1)%PN; if(pbN<PN)pbN++;
+  }
+
+  const crossL=new Int16Array(NTOK), crossC=new Int16Array(NTOK), crossR=new Int16Array(NTOK);
+  const bucket=[]; for(let L=0;L<LAYERS;L++) bucket.push([]);
+  const aggLog=new Float32Array(KOUT);     // EMA of exit logits for the distribution chart
+
+  // ---------- camera ----------
+  let ay=0.6, ax=0.42, dist=34, autorot=true;
+  const DEF={ay:0.6,ax:0.42,dist:34};
+  let W=0,H_=0,DPR=1,FOC=900,CXp=0,CYp=0;
+  function setFoc(){FOC=0.45*Math.min(W,H_)*dist/MAXR;}
+  function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H_=innerHeight;cv.width=W*DPR;cv.height=H_*DPR;cv.style.width=W+'px';cv.style.height=H_+'px';ctx.setTransform(DPR,0,0,DPR,0,0);CXp=W/2;CYp=H_/2;setFoc();GW=Math.max(2,Math.round(W*0.5));GH=Math.max(2,Math.round(H_*0.5));glowCv.width=GW;glowCv.height=GH;}
+  addEventListener('resize',resize); resize();
+  let sxo,syo,sco,dzo;
+  function project(x,y,z){const ca=Math.cos(ay),sa=Math.sin(ay);const x1=x*ca-z*sa,z1=x*sa+z*ca;const cx=Math.cos(ax),sx2=Math.sin(ax);const y2=y*cx-z1*sx2,z2=y*sx2+z1*cx;const d=z2+dist;if(d<=0.5){dzo=-1;return false;}const s=FOC/d;sxo=CXp+x1*s;syo=CYp-y2*s;sco=s;dzo=d;return true;}
+
+  // ---------- field ----------
+  function updateField(){flash*=0.92;const adec=focusOn?0.94:0.90;for(let i=0;i<COUNT;i++){disp[i]+=(targ[i]-disp[i])*0.12;act[i]*=adec;if(project(X[i],Y[i],Z[i])){sx[i]=sxo;sy[i]=syo;sc[i]=sco;dz[i]=dzo;}else dz[i]=1e9;}}
+
+  // ---------- tokens step (transform + attention + output sampling) ----------
+  const mixv=new Float32Array(D), outv=new Float32Array(D);
+  const qbuf=new Float32Array(DH), attvec=new Float32Array(D), attnD=new Float32Array(D), ascore=new Float32Array(NTOK);
+  function stepTokens(dt){
+    let inField=0; const sp=(0.5+rate*1.9)*7.0, ALPHA=0.55;
+    for(let L=0;L<LAYERS;L++) bucket[L].length=0;
+    // pass 1
+    for(let i=0;i<NTOK;i++){
+      const cur=isActive(i); if(cur&&!TACT[i]) spawn(i); TACT[i]=cur?1:0; crossL[i]=-1;
+      if(!cur){THAS[i]=0;continue;}
+      TPZ[i]=TZ[i]; TX[i]+=TVX[i]*dt;TY[i]+=TVY[i]*dt;TZ[i]+=sp*dt;
+      TVX[i]+=-TX[i]*0.01*dt;TVY[i]+=-TY[i]*0.01*dt;TVX[i]*=0.96;TVY[i]*=0.96;TPUL[i]*=0.90;
+      if(TX[i]>HX*1.1)TX[i]=HX*1.1;if(TX[i]<-HX*1.1)TX[i]=-HX*1.1;
+      if(TY[i]>HY*1.1)TY[i]=HY*1.1;if(TY[i]<-HY*1.1)TY[i]=-HY*1.1;
+      if(TZ[i]>TRAVEL) spawn(i);
+      for(let L=0;L<LAYERS;L++){
+        if(TPZ[i]<layerZ[L]&&TZ[i]>=layerZ[L]){crossL[i]=L;crossC[i]=colAt(TX[i]);crossR[i]=rowAt(TY[i]);break;}
+        if(Math.abs(TZ[i]-layerZ[L])<ATT_BAND) bucket[L].push(i);
+      }
+      if(TZ[i]>-HZ-1&&TZ[i]<HZ+1) inField++;
+    }
+    // pass 2
+    for(let i=0;i<NTOK;i++){
+      const L=crossL[i]; if(L<0) continue; const o=i*D;
+      for(let d=0;d<D;d++) mixv[d]=H[o+d];
+      TNBN[i]=0;
+      if(attnOn){
+        const bk=bucket[L], m=bk.length;
+        if(m>0){
+          for(let d=0;d<D;d++) attvec[d]=0;
+          let linkN=0; const invs=ATT_SHARP/Math.sqrt(DH);
+          for(let hh=0;hh<HEADS;hh++){
+            for(let a=0;a<DH;a++){let s=0;const wo=(hh*DH+a)*D;for(let d=0;d<D;d++)s+=WQq[wo+d]*H[o+d];qbuf[a]=s;}
+            let mxs=-1e9;
+            for(let p=0;p<m;p++){const j=bk[p],jb=j*D;
+              if(causal && TPOS[j]>TPOS[i]){ascore[p]=-1e30;continue;}   // a token attends only to earlier positions
+              let s=0;for(let a=0;a<DH;a++){let kk=0;const wo=(hh*DH+a)*D;for(let d=0;d<D;d++)kk+=WKq[wo+d]*H[jb+d];s+=qbuf[a]*kk;}
+              s*=invs;ascore[p]=s;if(s>mxs)mxs=s;}
+            let sw=0;for(let p=0;p<m;p++){const e=Math.exp(ascore[p]-mxs);ascore[p]=e;sw+=e;}
+            let best=-1,bestw=-1;
+            for(let p=0;p<m;p++){const pw=ascore[p]/sw,j=bk[p];if(j!==i&&pw>bestw){bestw=pw;best=j;}}
+            for(let a=0;a<DH;a++){let acc=0;const wo=(hh*DH+a)*D;
+              for(let p=0;p<m;p++){const j=bk[p],jb=j*D,pw=ascore[p]/sw;let vv=0;for(let d=0;d<D;d++)vv+=WVq[wo+d]*H[jb+d];acc+=pw*vv;}
+              attvec[hh*DH+a]=acc;}
+            TNB[i*ATT_LINKS+hh]=best; TNW[i*ATT_LINKS+hh]=best>=0?bestw:0; if(best>=0)linkN=hh+1;
+          }
+          for(let d=0;d<D;d++){let s=0;const dr=d*D;for(let e=0;e<D;e++)s+=WOq[dr+e]*attvec[e];attnD[d]=s;}
+          for(let d=0;d<D;d++) mixv[d]=(1-ATT_BETA)*H[o+d]+ATT_BETA*attnD[d];
+          TNBN[i]=linkN;
+        }
+      }
+      // DxD local weight transform: h <- tanh(h + ALPHA * (W h)), residual
+      const c=crossC[i], r=crossR[i];
+      for(let k=0;k<D;k++){
+        const rr=Math.min(ROWS-1,r+k); let accu=0;
+        for(let j=0;j<D;j++){const cc=Math.min(COLS-1,c+j);accu+=disp[idx(cc,rr,L)]*mixv[j];}
+        outv[k]=Math.tanh(mixv[k]+ALPHA*accu);
+      }
+      for(let d=0;d<D;d++) H[o+d]=outv[d];
+      if(i===focusTok) flLayer[L]=colorVal(i);
+      // structured deflection from updated representation
+      TVX[i]+=outv[0]*1.6; TVY[i]+=outv[1]*1.6; TPUL[i]=1;
+      // activate cells (in focus mode only the followed token lights the lattice)
+      if(!focusOn || i===focusTok){
+        const cl=Math.max(0,c-1),cr=Math.min(COLS-1,c+1),rd=Math.max(0,r-1),ru=Math.min(ROWS-1,r+1);
+        act[idx(c,r,L)]=1;act[idx(cl,r,L)]=Math.max(act[idx(cl,r,L)],0.6);act[idx(cr,r,L)]=Math.max(act[idx(cr,r,L)],0.6);
+        act[idx(c,rd,L)]=Math.max(act[idx(c,rd,L)],0.6);act[idx(c,ru,L)]=Math.max(act[idx(c,ru,L)],0.6);
+      }
+      // output stage at the final layer: logits -> softmax(T) -> sample a bin
+      if(L===LAYERS-1){
+        let mx=-1e9; const lg=new Float32Array(KOUT);
+        for(let b=0;b<KOUT;b++){let s=0;for(let d=0;d<D;d++)s+=H[o+d]*BIN[b*D+d];lg[b]=s;if(s>mx)mx=s;}
+        for(let b=0;b<KOUT;b++) aggLog[b]=aggLog[b]*0.9+lg[b]*0.1;
+        let sum=0; const p=new Float32Array(KOUT);
+        for(let b=0;b<KOUT;b++){p[b]=Math.exp((lg[b]-mx)/temp);sum+=p[b];}
+        let rv=Math.random()*sum, acc=0, pick=0;
+        for(let b=0;b<KOUT;b++){acc+=p[b];if(rv<=acc){pick=b;break;}}
+        TBIN[i]=pick;
+      }
+    }
+    return inField;
+  }
+
+  // ---------- 3d labels ----------
+  const LABELS=[
+    {x:0,y:HY+2.4,z:0,ox:0,oy:-30,t:'WEIGHT MATRICES ×6'},
+    {x:0,y:-HY-1.4,z:-HZ-3,ox:-6,oy:20,t:'INPUT SEQUENCE'},
+    {x:0,y:-HY-1.4,z:HZ+3,ox:6,oy:20,t:'OUTPUT · SAMPLED'},
+    {x:HX+1.2,y:HY*0.4,z:0,ox:22,oy:0,t:'TOKEN FLUX'}
+  ];
+  function drawLabels(){
+    ctx.textBaseline='middle';ctx.font='600 11px "JetBrains Mono",monospace';
+    for(const lb of LABELS){if(!project(lb.x,lb.y,lb.z))continue;const ax2=sxo,ay2=syo,tx=ax2+lb.ox,ty=ay2+lb.oy;
+      ctx.strokeStyle='rgba(140,160,200,0.32)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(ax2,ay2);ctx.lineTo(tx,ty);ctx.stroke();
+      ctx.fillStyle='rgba(180,205,240,0.75)';ctx.beginPath();ctx.arc(ax2,ay2,1.7,0,6.283);ctx.fill();
+      ctx.textAlign=lb.ox<0?'right':'left';const px=lb.ox<0?tx-3:tx+3;
+      ctx.lineWidth=3.5;ctx.strokeStyle='rgba(5,6,11,0.9)';ctx.strokeText(lb.t,px,ty);
+      ctx.fillStyle='rgba(206,218,238,0.92)';ctx.fillText(lb.t,px,ty);}
+    ctx.textAlign='left';
+  }
+
+  // ---------- mini charts ----------
+  function mini(id,w,h){const cn=document.getElementById(id);const d=Math.min(devicePixelRatio||1,2);cn.width=w*d;cn.height=h*d;const c=cn.getContext('2d');c.setTransform(d,0,0,d,0,0);return {c,w,h};}
+  const HIST=mini('hist',200,52), ODIST=mini('odist',190,48), KVB=mini('kvb',190,34), AHEAT=mini('aheat',104,104);
+  function viColor(t){const li=((t<0?0:t>1?1:t)*255|0)*3;return 'rgb('+LUT[li]+','+LUT[li+1]+','+LUT[li+2]+')';}
+
+  function drawHist(){const {c,w,h}=HIST;c.clearRect(0,0,w,h);const B=46,ct=new Float32Array(B);
+    for(let i=0;i<COUNT;i++){let v=disp[i];if(v>1)v=1;else if(v<-1)v=-1;ct[((v+1)/2*(B-1))|0]++;}
+    let mx=1;for(let b=0;b<B;b++)if(ct[b]>mx)mx=ct[b];const bw=w/B;
+    for(let b=0;b<B;b++){const hh=Math.pow(ct[b]/mx,0.7)*(h-3);c.fillStyle=viColor(b/(B-1));c.fillRect(b*bw+0.6,h-hh,bw-1.2,hh);}}
+
+  function updateTopWords(){const el=document.getElementById('topw');if(!el)return;
+    let mx=-1e9;for(let b=0;b<KOUT;b++)if(aggLog[b]>mx)mx=aggLog[b];
+    let sum=0;const p=new Float32Array(KOUT);for(let b=0;b<KOUT;b++){p[b]=Math.exp((aggLog[b]-mx)/temp);sum+=p[b];}
+    const idxs=Array.from({length:KOUT},(_,b)=>b).sort((a,b)=>p[b]-p[a]).slice(0,5);
+    const top=p[idxs[0]]/sum||1;
+    el.innerHTML='';
+    for(const b of idxs){const pr=p[b]/sum;const row=document.createElement('div');row.className='w';
+      row.innerHTML='<span class="nm">'+WORDS[b%WORDS.length]+'</span><span class="bar" style="width:'+(8+58*(pr/top))+'px"></span><span class="pc">'+Math.round(pr*100)+'%</span>';
+      el.appendChild(row);}
+  }
+  function drawODist(){const {c,w,h}=ODIST;c.clearRect(0,0,w,h);let mx=-1e9;for(let b=0;b<KOUT;b++)if(aggLog[b]>mx)mx=aggLog[b];
+    let sum=0;const p=new Float32Array(KOUT);for(let b=0;b<KOUT;b++){p[b]=Math.exp((aggLog[b]-mx)/temp);sum+=p[b];}
+    let pmx=0;for(let b=0;b<KOUT;b++){p[b]/=sum;if(p[b]>pmx)pmx=p[b];}
+    const bw=w/KOUT;for(let b=0;b<KOUT;b++){const hh=(pmx>0?p[b]/pmx:0)*(h-3);c.fillStyle=viColor(b/(KOUT-1));c.fillRect(b*bw+0.6,h-hh,bw-1.2,hh);}}
+
+  function drawKV(){const {c,w,h}=KVB;c.clearRect(0,0,w,h);const cnt=new Float32Array(LAYERS);
+    for(let i=0;i<NTOK;i++){if(!TACT[i])continue;for(let L=0;L<LAYERS;L++)if(Math.abs(TZ[i]-layerZ[L])<LGAP*0.5){cnt[L]++;break;}}
+    let mx=1;for(let L=0;L<LAYERS;L++)if(cnt[L]>mx)mx=cnt[L];const bw=w/LAYERS;
+    for(let L=0;L<LAYERS;L++){const hh=(cnt[L]/mx)*(h-3);c.fillStyle='rgba(125,211,252,0.85)';c.fillRect(L*bw+2,h-hh,bw-4,hh);
+      c.fillStyle='rgba(125,211,252,0.18)';c.fillRect(L*bw+2,1,bw-4,h-2);}}
+
+  function drawHeat(){const {c,w,h}=AHEAT;c.clearRect(0,0,w,h);
+    let sel=[];for(let i=0;i<NTOK&&sel.length<HEAT_M;i++){if(TACT[i]&&Math.abs(TZ[i]-layerZ[LH])<ATT_BAND*1.6)sel.push(i);}
+    sel.sort((a,b)=>TPOS[a]-TPOS[b]);
+    const m=sel.length;if(m<2){c.fillStyle='rgba(120,135,170,0.35)';c.font='9px monospace';c.fillText('no tokens in layer',8,h/2);return;}
+    const hh=selHead, invs=ATT_SHARP/Math.sqrt(DH), cell=w/m;
+    for(let a=0;a<m;a++){const ia=sel[a]*D;const q=[0,0];
+      for(let x=0;x<DH;x++){let s=0;const wo=(hh*DH+x)*D;for(let d=0;d<D;d++)s+=WQq[wo+d]*H[ia+d];q[x]=s;}
+      const row=new Float32Array(m);let mxs=-1e9;
+      for(let b=0;b<m;b++){
+        if(causal && TPOS[sel[b]]>TPOS[sel[a]]){row[b]=-1e30;continue;}
+        const ib=sel[b]*D;let s=0;for(let x=0;x<DH;x++){let kk=0;const wo=(hh*DH+x)*D;for(let d=0;d<D;d++)kk+=WKq[wo+d]*H[ib+d];s+=q[x]*kk;}s*=invs;row[b]=s;if(s>mxs)mxs=s;}
+      let sw=0;for(let b=0;b<m;b++){const e=Math.exp(row[b]-mxs);row[b]=e;sw+=e;}
+      for(let b=0;b<m;b++){const masked=causal&&TPOS[sel[b]]>TPOS[sel[a]];c.fillStyle=masked?'rgba(20,24,36,0.9)':viColor(Math.pow(row[b]/sw,0.55));c.fillRect(b*cell,a*cell,cell-0.5,cell-0.5);}}
+  }
+
+  // ---------- main draw ----------
+  function draw(){
+    ctx.fillStyle='#05060B';ctx.fillRect(0,0,W,H_);
+    const fdim=focusOn?0.32:1;
+    ctx.lineWidth=1;ctx.strokeStyle='rgba(60,76,110,0.40)';const w=COLS*GAP,h=ROWS*GAP;
+    for(let L=0;L<LAYERS;L++){const z=layerZ[L],pts=[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]];ctx.beginPath();
+      for(let k=0;k<4;k++){if(project(pts[k][0],pts[k][1],z)){k?ctx.lineTo(sxo,syo):ctx.moveTo(sxo,syo);}}ctx.closePath();ctx.stroke();}
+    order.sort((a,b)=>dz[b]-dz[a]);const near=dist-MAXR,far=dist+MAXR,fb=1+flash*0.5;
+    for(let oi=0;oi<COUNT;oi++){const i=order[oi];if(dz[i]>=1e9)continue;let v=disp[i];if(v>1)v=1;else if(v<-1)v=-1;
+      const mag=Math.abs(v),li=lutIdx(v),fog=Math.max(0.16,Math.min(1,(far-dz[i])/(far-near))),a=act[i],bb=(0.55+0.35*mag)*fog*fb*fdim;
+      let R=LUT[li]*bb,G=LUT[li+1]*bb,B=LUT[li+2]*bb;if(a>0.02){R+=a*110*fog;G+=a*200*fog;B+=a*255*fog;}
+      R=R>255?255:R|0;G=G>255?255:G|0;B=B>255?255:B|0;const size=sc[i]*(0.18+mag*0.36+a*0.30);
+      ctx.fillStyle='rgb('+R+','+G+','+B+')';ctx.fillRect(sx[i]-size/2,sy[i]-size/2,size,size);}
+
+    ctx.globalCompositeOperation='lighter';const lv=PREC[prec].levels;
+    if(focusOn&&pbN>1){
+      ctx.strokeStyle='rgba(180,235,255,0.6)';ctx.lineWidth=1.4;ctx.beginPath();let started=false;
+      for(let k=0;k<pbN;k++){const ii=(pbHead-pbN+k+PN*2)%PN;if(project(PBX[ii],PBY[ii],PBZ[ii])){started?ctx.lineTo(sxo,syo):ctx.moveTo(sxo,syo);started=true;}}
+      ctx.stroke();
+    }
+    for(let i=0;i<NTOK;i++){
+      if(!TACT[i]){THAS[i]=0;continue;}
+      if(!project(TX[i],TY[i],TZ[i])){THAS[i]=0;continue;}
+      const cx=sxo,cy=syo,s=sco,d=dzo,fog=Math.max(0.22,Math.min(1,(far-d)/(far-near))),pul=TPUL[i];
+      if(focusOn&&i!==focusTok){const rr=Math.min(2,Math.max(0.5,s*0.05));ctx.fillStyle='rgba(150,165,200,'+(0.12*fog)+')';ctx.beginPath();ctx.arc(cx,cy,rr,0,6.283);ctx.fill();THAS[i]=0;continue;}
+      if(attnOn&&pul>0.15&&TNBN[i]>0){ctx.lineWidth=1;
+        for(let k=0;k<TNBN[i];k++){const j=TNB[i*ATT_LINKS+k];if(j<0)continue;
+          const al=Math.min(0.75,(0.2+0.7*TNW[i*ATT_LINKS+k])*pul),rgb=HEADRGB[k];
+          ctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al+')';
+          if(project(TX[j],TY[j],TZ[j])){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(sxo,syo);ctx.stroke();}}
+        project(TX[i],TY[i],TZ[i]);}
+      let R,G,B;
+      if(TBIN[i]>=0&&TZ[i]>HZ){const li=(TBIN[i]/(KOUT-1)*255|0)*3;R=Math.min(255,LUT[li]+40);G=Math.min(255,LUT[li+1]+40);B=Math.min(255,LUT[li+2]+40);}
+      else{const li=lutIdx(quantize(colorVal(i),lv));R=Math.min(255,LUT[li]+40+pul*60);G=Math.min(255,LUT[li+1]+40+pul*60);B=Math.min(255,LUT[li+2]+40+pul*60);}
+      if(THAS[i]){ctx.strokeStyle='rgba('+R+','+G+','+B+','+(0.42*fog)+')';ctx.lineWidth=Math.max(0.6,s*0.045);ctx.beginPath();ctx.moveTo(TPX[i],TPY[i]);ctx.lineTo(cx,cy);ctx.stroke();}
+      const fk=(focusOn&&i===focusTok)?2.0:1; const hr=Math.min(4.2,Math.max(0.7,s*0.06))*(1+pul*0.8)*fk;
+      ctx.fillStyle='rgba('+R+','+G+','+B+','+(0.92*fog)+')';ctx.beginPath();ctx.arc(cx,cy,hr,0,6.283);ctx.fill();
+      ctx.fillStyle='rgba(235,250,255,'+((0.55+pul*0.4)*fog)+')';ctx.beginPath();ctx.arc(cx,cy,Math.max(0.45,hr*0.42),0,6.283);ctx.fill();
+      if(focusOn&&i===focusTok){ctx.strokeStyle='rgba(200,240,255,0.85)';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(cx,cy,hr+4,0,6.283);ctx.stroke();}
+      TPX[i]=cx;TPY[i]=cy;THAS[i]=1;}
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    if(glow){
+      glowCtx.setTransform(1,0,0,1,0,0); glowCtx.clearRect(0,0,GW,GH);
+      glowCtx.filter='blur(5px)'; glowCtx.drawImage(cv,0,0,GW,GH); glowCtx.filter='none';
+      ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.45;
+      ctx.drawImage(glowCv,0,0,W,H_); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+    }
+    if(showLabels) drawLabels();
+  }
+
+  // ---------- input ----------
+  let drag=false,lx=0,ly=0;
+  let downX=0,downY=0,downT=0;
+  cv.addEventListener('pointerdown',e=>{drag=true;autorot=false;lx=e.clientX;ly=e.clientY;downX=e.clientX;downY=e.clientY;downT=performance.now();cv.setPointerCapture(e.pointerId);});
+  cv.addEventListener('pointerup',e=>{drag=false;const moved=Math.hypot(e.clientX-downX,e.clientY-downY);if(moved<6&&performance.now()-downT<400)handleClick(e.clientX,e.clientY);});
+  cv.addEventListener('pointermove',e=>{if(!drag)return;ay-=(e.clientX-lx)*0.006;ax-=(e.clientY-ly)*0.006;ax=Math.max(-1.35,Math.min(1.35,ax));lx=e.clientX;ly=e.clientY;});
+  cv.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(14,Math.min(95,dist+e.deltaY*0.03));setFoc();},{passive:false});
+  let pinch=0;
+  cv.addEventListener('touchstart',e=>{if(e.touches.length===2)pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
+  cv.addEventListener('touchmove',e=>{if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);dist=Math.max(14,Math.min(95,dist+(pinch-d)*0.05));pinch=d;setFoc();}},{passive:true});
+
+  // ---------- click to select / inspect ----------
+  const inspectEl=document.getElementById('inspect');
+  function showInspector(ci,mx,my){
+    const v=base[ci]; let rows='';
+    for(const k of ['fp32','fp16','int8','int4']){const lv=PREC[k].levels,q=quantize(v,lv),err=Math.abs(v-q);
+      rows+='<div class="rw"><span class="f" style="color:'+PREC[k].color+'">'+PREC[k].name+'</span><span class="v">'+q.toFixed(4)+'</span><span class="e"><i style="width:'+Math.min(100,err*400)+'%"></i></span></div>';}
+    inspectEl.innerHTML='<div class="h">weight '+(v>=0?'+':'')+v.toFixed(5)+' · value per format</div>'+rows;
+    inspectEl.style.left=Math.min(innerWidth-190,mx+14)+'px'; inspectEl.style.top=Math.min(innerHeight-150,my+14)+'px';
+    inspectEl.classList.add('on');
+  }
+  function handleClick(mx,my){
+    // 1) nearest token
+    let bi=-1,bd=18*18;
+    for(let i=0;i<NTOK;i++){ if(!TACT[i])continue; if(!project(TX[i],TY[i],TZ[i]))continue; const dx=sxo-mx,dy=syo-my,d2=dx*dx+dy*dy; if(d2<bd){bd=d2;bi=i;} }
+    if(bi>=0){ inspectEl.classList.remove('on'); focusOn=true; focusBtn.setAttribute('aria-pressed',true); fpanel.classList.add('on'); focusTok=bi; resetFocusPath(); act.fill(0); return; }
+    // 2) nearest lattice cell
+    let ci=-1,cbd=1e9;
+    for(let i=0;i<COUNT;i++){ if(dz[i]>=1e9)continue; const dx=sx[i]-mx,dy=sy[i]-my,d2=dx*dx+dy*dy; const rad=Math.max(7,sc[i]*0.4); if(d2<rad*rad&&d2<cbd){cbd=d2;ci=i;} }
+    if(ci>=0) showInspector(ci,mx,my); else inspectEl.classList.remove('on');
+  }
+
+  // ---------- HUD ----------
+  function setPrec(k){prec=k;const p=PREC[k];recompute();flash=1.0;
+    document.querySelectorAll('#seg button').forEach(b=>{const on=b.dataset.k===k;b.setAttribute('aria-pressed',on);b.style.background=on?p.color:'transparent';});
+    const pv=document.getElementById('v-prec');pv.textContent=p.name;pv.style.color=p.color;
+    document.getElementById('v-bpp').textContent=p.bpp;document.getElementById('v-lvl').textContent=p.lvl;document.getElementById('v-thr').textContent=p.thr;
+    const m=7*p.bpp;document.getElementById('v-mem').textContent=(m%1?m.toFixed(1):m.toFixed(0))+' GB';}
+  document.querySelectorAll('#seg button').forEach(b=>b.addEventListener('click',()=>setPrec(b.dataset.k)));
+  setPrec('int4');
+  document.getElementById('rate').addEventListener('input',e=>rate=+e.target.value/100);
+  document.getElementById('dens').addEventListener('input',e=>density=+e.target.value/100);
+  document.getElementById('temp').addEventListener('input',e=>{temp=+e.target.value/100;document.getElementById('v-temp').textContent=temp.toFixed(2);});
+  document.getElementById('zin').addEventListener('click',()=>{dist=Math.max(14,dist-6);setFoc();});
+  document.getElementById('zout').addEventListener('click',()=>{dist=Math.min(95,dist+6);setFoc();});
+  const attnBtn=document.getElementById('attn');attnBtn.addEventListener('click',()=>{attnOn=!attnOn;attnBtn.setAttribute('aria-pressed',attnOn);});
+  const lblBtn=document.getElementById('lbl');lblBtn.addEventListener('click',()=>{showLabels=!showLabels;lblBtn.setAttribute('aria-pressed',showLabels);});
+  const pb=document.getElementById('pause');pb.addEventListener('click',()=>{paused=!paused;pb.textContent=paused?'RESUME':'PAUSE';});
+  document.getElementById('reset').addEventListener('click',()=>{ay=DEF.ay;ax=DEF.ax;dist=DEF.dist;autorot=true;setFoc();});
+  const headBtn=document.getElementById('head'), heatcap=document.getElementById('heatcap');
+  function setHead(){const rgb=HEADRGB[selHead];headBtn.textContent='HEAD '+(selHead+1);headBtn.style.color='rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
+    heatcap.textContent='attention · layer '+(LH+1)+' · head '+(selHead+1);heatcap.style.color='rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';}
+  headBtn.addEventListener('click',()=>{selHead=(selHead+1)%HEADS;setHead();});
+  setHead();
+  const fpanel=document.getElementById('fpanel'), focusBtn=document.getElementById('focus');
+  focusBtn.addEventListener('click',()=>{focusOn=!focusOn;focusBtn.setAttribute('aria-pressed',focusOn);fpanel.classList.toggle('on',focusOn);if(focusOn){pickFocus();act.fill(0);}});
+  const helpov=document.getElementById('helpov');
+  document.getElementById('help').addEventListener('click',()=>helpov.classList.add('on'));
+  document.getElementById('helpclose').addEventListener('click',()=>helpov.classList.remove('on'));
+  helpov.addEventListener('click',e=>{if(e.target===helpov)helpov.classList.remove('on');});
+  const aboutov=document.getElementById('aboutov');
+  document.getElementById('about').addEventListener('click',()=>aboutov.classList.add('on'));
+  document.getElementById('aboutclose').addEventListener('click',()=>aboutov.classList.remove('on'));
+  aboutov.addEventListener('click',e=>{if(e.target===aboutov)aboutov.classList.remove('on');});
+  const causalBtn=document.getElementById('causal');
+  causalBtn.addEventListener('click',()=>{causal=!causal;causalBtn.setAttribute('aria-pressed',causal);});
+  const promptEl=document.getElementById('prompt');
+  let promptTmr=0;
+  promptEl.addEventListener('input',()=>{clearTimeout(promptTmr);promptTmr=setTimeout(()=>setSentence(promptEl.value||' '),200);});
+  setSentence(promptEl.value);
+
+  // ---------- guided tour ----------
+  let tourTo=null, tourIdx=0, tourOn=false;
+  function setFocusMode(on){focusOn=on;focusBtn.setAttribute('aria-pressed',on);fpanel.classList.toggle('on',on);if(on){pickFocus();act.fill(0);}}
+  function setCausal(on){causal=on;causalBtn.setAttribute('aria-pressed',on);}
+  const TOUR=[
+    {to:{ay:0.6,ax:0.42,dist:44}, t:'This is one transformer block. Six stacked weight layers, with a sequence of tokens flowing through them from front to back. Everything you see is a real mechanism, shown at reduced scale.', act:()=>{setFocusMode(false);attnOn=true;setCausal(true);setPrec('fp16');}},
+    {to:{ay:0.05,ax:0.30,dist:40}, t:'Input. The sentence in the bar above is split into tokens. Each token becomes an embedding, a small vector, and enters the field at the front. Edit the text to change the sequence.', act:()=>{}},
+    {to:{ay:0.95,ax:0.55,dist:24}, t:'Weights. Each layer is a matrix of parameters, shown as a grid. As a token crosses a layer it is multiplied by these weights, which transforms its embedding.', act:()=>{}},
+    {to:{ay:0.7,ax:0.40,dist:30}, t:'Transformation. Following a single token, you can watch its representation change at every layer. The six swatches record its state, the lattice lights up only along its path.', act:()=>{setFocusMode(true);}},
+    {to:{ay:0.6,ax:0.42,dist:40}, t:'Attention. Tokens read each other through query and key matching, in three heads (the colored links). Causal masking lets each token see only earlier positions: the heatmap, top left, is triangular.', act:()=>{setFocusMode(false);setCausal(true);}},
+    {to:{ay:0.6,ax:0.42,dist:40}, t:'Quantization. Switching to INT4 uses four bits per weight instead of sixteen. Less memory, faster compute, but a coarser model: watch the weight histogram, lower left, collapse.', act:()=>{setPrec('int4');}},
+    {to:{ay:0.45,ax:0.35,dist:34}, t:'Sampling. At the output the final state becomes a distribution over next tokens, lower right. Temperature shapes it: low concentrates the choice, high spreads it across more words.', act:()=>{}},
+    {to:{ay:0.6,ax:0.42,dist:38}, t:'That is the whole pipeline: tokenize, embed, attend, transform, quantize, sample. Explore freely now, or press ABOUT for a written overview.', act:()=>{setPrec('fp16');}}
+  ];
+  const tourBox=document.getElementById('tour'), tstep=document.getElementById('tstep'), ttext=document.getElementById('ttext');
+  function applyStep(){const s=TOUR[tourIdx];tourTo={...s.to};s.act&&s.act();tstep.textContent='step '+(tourIdx+1)+' / '+TOUR.length;ttext.textContent=s.t;
+    document.getElementById('tprev').style.visibility=tourIdx===0?'hidden':'visible';
+    document.getElementById('tnext').textContent=tourIdx===TOUR.length-1?'finish':'next ›';}
+  function startTour(){tourOn=true;autorot=false;tourBox.classList.add('on');tourIdx=0;applyStep();}
+  function endTour(){tourOn=false;tourBox.classList.remove('on');tourTo=null;autorot=true;}
+  document.getElementById('tour-btn').addEventListener('click',startTour);
+  document.getElementById('texit').addEventListener('click',endTour);
+  document.getElementById('tprev').addEventListener('click',()=>{if(tourIdx>0){tourIdx--;applyStep();}});
+  document.getElementById('tnext').addEventListener('click',()=>{if(tourIdx<TOUR.length-1){tourIdx++;applyStep();}else endTour();});
+  const introEl=document.getElementById('intro');
+  function dismissIntro(){introEl.classList.add('gone');}
+  document.getElementById('introExplore').addEventListener('click',dismissIntro);
+  document.getElementById('introTour').addEventListener('click',()=>{dismissIntro();startTour();});
+  const glowBtn=document.getElementById('glow');
+  glowBtn.addEventListener('click',()=>{glow=!glow;glowBtn.setAttribute('aria-pressed',glow);});
+  function swatch(id,val){const el=document.getElementById(id);if(isNaN(val)){el.style.background='transparent';el.style.borderStyle='dashed';}else{const li=((val+1)/2*255|0)*3;el.style.background='rgb('+LUT[li]+','+LUT[li+1]+','+LUT[li+2]+')';el.style.borderStyle='solid';}}
+  function updateFocusPanel(){
+    document.getElementById('f-id').textContent = focusTok>=0?('token #'+focusTok):'token';
+    for(let L=0;L<LAYERS;L++) swatch('fl'+L, flLayer[L]);
+    const fo=document.getElementById('fout');
+    if(focusTok>=0&&TBIN[focusTok]>=0){const li=(TBIN[focusTok]/(KOUT-1)*255|0)*3;fo.style.background='rgb('+LUT[li]+','+LUT[li+1]+','+LUT[li+2]+')';fo.style.borderStyle='solid';}
+    else{fo.style.background='transparent';fo.style.borderStyle='dashed';}
+  }
+
+  // ---------- loop ----------
+  const fluxEl=document.getElementById('v-flux'), kvEl=document.getElementById('v-kv');
+  let last=performance.now(), tick=0, fcur=0;
+  function frame(now){
+    const dt=Math.min(0.05,(now-last)/1000);last=now;
+    if(autorot&&!drag) ay+=dt*0.10;
+    if(tourTo&&!drag){const da=((tourTo.ay-ay+Math.PI*3)%(Math.PI*2))-Math.PI;ay+=da*0.07;ax+=(tourTo.ax-ax)*0.07;dist+=(tourTo.dist-dist)*0.07;setFoc();}
+    if(!paused){fcur=stepTokens(dt);updateField();if(focusOn)updateFocus();}
+    else{for(let i=0;i<COUNT;i++){if(project(X[i],Y[i],Z[i])){sx[i]=sxo;sy[i]=syo;sc[i]=sco;dz[i]=dzo;}else dz[i]=1e9;}}
+    draw();
+    if(++tick%3===0){drawHist();drawODist();drawKV();updateTopWords();}
+    if(tick%4===0){drawHeat();if(focusOn)updateFocusPanel();}
+    if(tick%8===0){fluxEl.textContent=Math.round(fcur);
+      const kvKB=(2*LAYERS*D*fcur*2)/1024; kvEl.textContent=(kvKB<1000?kvKB.toFixed(1)+' KB':(kvKB/1024).toFixed(2)+' MB');}
+    requestAnimationFrame(frame);
+  }
+  document.getElementById('v-temp').textContent=temp.toFixed(2);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
