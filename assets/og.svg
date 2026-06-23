@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="80%">
+      <stop offset="0%" stop-color="#161B2C"/><stop offset="62%" stop-color="#0E1220"/><stop offset="100%" stop-color="#070912"/>
+    </radialGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5EEAD4"/><stop offset="38%" stop-color="#7DD3FC"/><stop offset="70%" stop-color="#FF9E4A"/><stop offset="100%" stop-color="#FF6BD6"/>
+    </linearGradient>
+    <linearGradient id="spectrum" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#440154"/><stop offset="33%" stop-color="#3b528b"/><stop offset="60%" stop-color="#21908d"/><stop offset="80%" stop-color="#5dc863"/><stop offset="100%" stop-color="#fde725"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- perspective lattice motif, upper area -->
+  <g transform="translate(600 250)" opacity="0.9">
+    <g stroke="#2c3650" stroke-width="1.2" fill="none" opacity="0.5">
+      <g transform="translate(-260 0)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+      <g transform="translate(-180 -8)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+      <g transform="translate(-100 -16)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+      <g transform="translate(-20 -24)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+      <g transform="translate(60 -32)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+      <g transform="translate(140 -40)"><polygon points="-120,-92 120,-118 120,92 -120,118"/></g>
+    </g>
+    <g transform="translate(-260 0)">
+      <g fill="#21908d"><rect x="-104" y="-78" width="8" height="8" opacity=".8"/><rect x="-66" y="-82" width="8" height="8" fill="#5dc863" opacity=".9"/><rect x="-24" y="-76" width="8" height="8" fill="#fde725" opacity=".8"/><rect x="20" y="-80" width="8" height="8" fill="#3b528b" opacity=".7"/><rect x="64" y="-78" width="8" height="8" fill="#5dc863" opacity=".75"/></g>
+      <g fill="#3b528b"><rect x="-100" y="-36" width="8" height="8" opacity=".7"/><rect x="-60" y="-40" width="8" height="8" fill="#21908d" opacity=".85"/><rect x="-16" y="-34" width="8" height="8" fill="#5dc863" opacity=".7"/><rect x="28" y="-38" width="8" height="8" fill="#fde725" opacity=".8"/><rect x="70" y="-36" width="8" height="8" opacity=".7"/></g>
+      <g fill="#5dc863"><rect x="-104" y="6" width="8" height="8" opacity=".8"/><rect x="-62" y="2" width="8" height="8" fill="#fde725" opacity=".75"/><rect x="-18" y="8" width="8" height="8" fill="#21908d" opacity=".85"/><rect x="26" y="4" width="8" height="8" opacity=".8"/><rect x="68" y="6" width="8" height="8" fill="#3b528b" opacity=".7"/></g>
+      <g fill="#21908d"><rect x="-100" y="48" width="8" height="8" fill="#fde725" opacity=".7"/><rect x="-58" y="44" width="8" height="8" opacity=".85"/><rect x="-14" y="50" width="8" height="8" fill="#5dc863" opacity=".7"/><rect x="30" y="46" width="8" height="8" fill="#3b528b" opacity=".8"/><rect x="72" y="48" width="8" height="8" opacity=".7"/></g>
+    </g>
+    <g filter="url(#glow)">
+      <circle cx="-330" cy="10" r="3" fill="#bfefff"/><circle cx="-250" cy="-26" r="2.6" fill="#FF6BD6"/><circle cx="-150" cy="34" r="3" fill="#A8F0FF"/><circle cx="-40" cy="-8" r="2.6" fill="#FF9E4A"/><circle cx="70" cy="26" r="3" fill="#bfefff"/><circle cx="170" cy="-20" r="2.6" fill="#7DD3FC"/><circle cx="250" cy="14" r="2.8" fill="#FF6BD6"/>
+    </g>
+  </g>
+
+  <!-- title block, lower-centered -->
+  <g transform="translate(600 470)" text-anchor="middle">
+    <text x="0" y="0" font-size="96" font-weight="700" letter-spacing="-1" fill="url(#title)">LLM Atlas</text>
+    <rect x="-170" y="26" width="340" height="6" rx="3" fill="url(#spectrum)" opacity="0.92"/>
+    <text x="0" y="70" font-size="23" font-weight="500" letter-spacing="1" fill="#9AA3BC" font-family="'JetBrains Mono', Consolas, monospace">a transformer, made visible</text>
+    <text x="0" y="104" font-size="16" letter-spacing="2" fill="#6B7388" font-family="'JetBrains Mono', Consolas, monospace">tokens · attention · quantization · sampling · by engineering87</text>
+  </g>
+</svg>

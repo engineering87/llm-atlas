@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use LLM Atlas, please cite it as below."
+title: "LLM Atlas: an interactive transformer visualization"
+abstract: "An interactive, in-browser visualization of how a transformer language model works, covering tokenization, embeddings, multi-head attention, per-layer transforms, weight quantization, and sampling, rendered live on a custom Canvas 2D engine with no dependencies."
+type: software
+authors:
+  - family-names: "Del Re"
+    given-names: "Francesco"
+    orcid: "https://orcid.org/0009-0009-5524-6984"
+version: "1.0.0"
+date-released: "2026-06-23"
+license: MIT
+url: "https://calm-water-0a4775e10.7.azurestaticapps.net/"
+repository-code: "https://github.com/engineering87/llm-atlas"
+keywords:
+  - transformer
+  - large language model
+  - attention
+  - quantization
+  - visualization
+  - educational

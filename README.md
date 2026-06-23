@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://calm-water-0a4775e10.7.azurestaticapps.net"><img src="https://img.shields.io/badge/live%20demo-online-3FB950?logo=microsoftazure&logoColor=white" alt="Live demo"></a>
+  <a href="https://github.com/engineering87/llm-atlas/actions/workflows/ci.yml"><img src="https://github.com/engineering87/llm-atlas/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3FB950" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/dependencies-none-7DD3FC" alt="No dependencies">
   <img src="https://img.shields.io/badge/build-none-FF9E4A" alt="No build step">
@@ -24,6 +25,20 @@
 **LLM Atlas** turns the inside of a language model into something you can watch and touch. Type a sentence and see it become tokens, flow through six weight layers as embeddings, attend to one another through real query and key projections, get crushed by quantization, and finally turn into a next token chosen by temperature. It runs entirely in the browser, on a custom Canvas 2D engine, with no libraries, no build step, and no server.
 
 It is built to work on two levels at once: it should pull in someone who has never thought about how these models work, through the live, glowing graphics, and it should still satisfy someone who knows the architecture, because the mechanisms underneath are faithful.
+
+## The pipeline
+
+```mermaid
+flowchart LR
+  A[Input text] --> B[Tokenize]
+  B --> C[Embed + positional encoding]
+  C --> D[Multi-head attention]
+  D --> E[Per-layer weight transform]
+  E --> F{Quantize<br/>FP32 to INT4}
+  F --> G[Sample next token]
+```
+
+Every box above is a stage you can watch, toggle, and inspect in the live demo.
 
 ## What it shows
 
@@ -69,6 +84,10 @@ No installation, no dependencies, no API keys.
 The mechanisms that matter are real: subword-style tokenization, positional encoding, scaled dot-product multi-head attention, causal masking, residual per-layer transforms, symmetric weight quantization, and temperature sampling. The quantization is exact in its deterministic part, and the memory figure for the weights is a real multiplication of parameters by bytes.
 
 It is also, deliberately, a reduced model. The latent vector is six-dimensional rather than thousands, the projection weights are fixed rather than trained, attention is computed over co-located tokens rather than the full sequence, and the throughput and KV figures are proportional rather than measured. The goal is understanding, not benchmarking.
+
+## Tests
+
+The engine is checked by two dependency-free Node tests in [`test/`](test/), run in CI on every push and pull request: an interaction audit that drives every control and runs the loop for hundreds of frames, and a numeric test that verifies quantization actually collapses the weight distribution. See [`test/README.md`](test/README.md).
 
 ## Author
 
