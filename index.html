@@ -129,8 +129,24 @@
   .help .box.wide{max-width:560px;max-height:82vh;overflow-y:auto}
   @media (max-width:860px){ .tl .mini,.br{display:none} .legend{display:none} }
   @media (max-width:680px){
-    .tr{padding:10px 12px}.r .val{min-width:70px;font-size:12.5px}.r .lab{font-size:9px}
-    .title{font-size:14px}.seg button{padding:8px 10px;font-size:11.5px}.bl .mini{display:none}
+    .corner{padding:10px 12px}
+    /* the prompt bar owns the very top, full width and centered */
+    .tc{left:0;right:0;transform:none;max-width:none;text-align:center;padding:10px 8px}
+    .prompt-bar input{width:88vw;max-width:88vw}
+    .chips{max-width:92vw}
+    /* title: compact and centered, placed below the prompt; decorative bits hidden */
+    .tl{top:84px;left:50%;right:auto;transform:translateX(-50%);text-align:center;padding:0}
+    .tl .sub{display:none}
+    #heatcap,#aheat{display:none}
+    .title{font-size:13px}
+    /* readout: moved below the title band so nothing overlaps at the top */
+    .tr{top:112px;padding:8px 12px}
+    .r{gap:8px}.r .val{min-width:62px;font-size:12px}.r .lab{font-size:8.5px}
+    .seg button{padding:8px 10px;font-size:11.5px}.bl .mini{display:none}
+  }
+  @media (max-width:430px){
+    .tl{top:78px}.tr{top:104px}
+    .r .val{min-width:54px;font-size:11px}.r .lab{font-size:8px}
   }
 </style>
 </head>
