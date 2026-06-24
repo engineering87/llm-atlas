@@ -49,7 +49,7 @@ Every stage of a transformer block, rendered live and inspectable:
 - **Multi-head attention.** Tokens attend to one another through real scaled dot-product attention across three heads, with optional causal masking that makes the attention map triangular.
 - **Per-layer transforms.** At every layer the latent vector is multiplied by the local weight matrix, with a residual connection and a nonlinearity.
 - **Quantization.** Switch between FP32, FP16, INT8, and INT4, and watch the weight distribution collapse, the memory figure drop, and the range of possible outputs shrink.
-- **Sampling.** The final state becomes a distribution over next tokens, reshaped live by a temperature control.
+- **Sampling.** A softmax over the output scores becomes a probability distribution over next tokens, reshaped live by a temperature control.
 - **KV cache.** A readout and per-layer bars show how the cache grows with context.
 
 ## Run it
@@ -88,6 +88,22 @@ It is also, deliberately, a reduced model. The latent vector is six-dimensional 
 ## Tests
 
 The engine is checked by two dependency-free Node tests in [`test/`](test/), run in CI on every push and pull request: an interaction audit that drives every control and runs the loop for hundreds of frames, and a numeric test that verifies quantization actually collapses the weight distribution. See [`test/README.md`](test/README.md).
+
+## Repository layout
+
+```text
+index.html                  the entire application: engine, interface, and styles
+assets/                     banner and social preview images
+test/                       dependency-free Node tests (audit, invariants)
+staticwebapp.config.json    Azure Static Web Apps routing
+.github/workflows/          continuous integration and Azure deployment
+```
+
+## Citation
+
+If you reference LLM Atlas in your work, please cite it through the repository's [`CITATION.cff`](CITATION.cff), which GitHub also exposes through the "Cite this repository" button, or use:
+
+> Del Re, Francesco. *LLM Atlas: an interactive transformer visualization*. 2026. https://github.com/engineering87/llm-atlas
 
 ## Author
 
