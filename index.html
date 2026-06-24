@@ -210,10 +210,10 @@
     <div class="s">a simplified transformer, running live</div>
     <p>This is a small, illustrative model of how a language model processes text. It is not a real network running inference, but every mechanism shown is structurally faithful to a real transformer block.</p>
     <p><b>The lattice.</b> The six stacked grids are weight matrices, one per layer. These are the learned parameters: billions of numbers in a real model. Color and height encode each weight value.</p>
-    <p><b>The flux.</b> Tokens enter as a structured input sequence. Each one carries a small latent vector, an embedding. As a token crosses a layer it is transformed by that layer's weights, so its state and color change at every step. Switch on FOCUS to follow one token and watch its representation evolve across the six layers.</p>
-    <p><b>Attention.</b> At each layer a token does not act alone. It looks at the other tokens in that layer through query and key projections, attends most to those whose keys match its query, and blends in their values. Three heads read different relationships, shown as three colors of links and selectable in the heatmap.</p>
+    <p><b>The flux.</b> Tokens enter as a structured input sequence. Each one carries a small latent vector, an embedding. As a token crosses a layer its vector is multiplied by that layer's weight matrix, a matrix-vector multiplication, then passed through a nonlinearity with a residual connection, so its state and color change at every step. That multiply and accumulate against the weights is the core operation of the whole network, repeated at every layer. Switch on FOCUS to follow one token and watch its representation evolve across the six layers.</p>
+    <p><b>Attention.</b> At each layer a token does not act alone. It is projected into a query, a key, and a value, each one its own matrix multiplication. The match between a query and a key is their scaled dot product, and a softmax over those scores turns them into attention weights that sum to one, so the token attends most to the tokens whose keys align with its query and blends in their values. Three heads read different relationships, shown as three colors of links and selectable in the heatmap.</p>
     <p><b>Quantization.</b> The FP32 to INT4 buttons change how many bits represent each weight. Fewer bits means less memory and faster compute, but a coarser model: the weight histogram collapses, and the range of possible outputs shrinks with it.</p>
-    <p><b>Sampling.</b> At the output, the final state becomes a distribution over next-token bins. Temperature reshapes it: low temperature concentrates the choice, high temperature spreads it, which you can see in the next-token chart and in the color variety of exiting tokens.</p>
+    <p><b>Sampling.</b> At the output, the final state is multiplied by the output weights to give one score per next-token bin, and a softmax turns those scores into probabilities that sum to one. Temperature reshapes that distribution before a token is drawn from it: low temperature concentrates the probability on the likeliest tokens, high temperature spreads it, which you can see in the next-token chart and in the color variety of exiting tokens.</p>
     <p><b>Memory.</b> The KV cache grows with the number of tokens in context, which is why long contexts cost memory. The per-layer bars show where that cache currently sits.</p>
     <p style="color:var(--dim)">Scale is reduced for clarity: a six-dimensional latent instead of thousands, fixed projections instead of trained ones, and memory and throughput figures that are proportional rather than measured.</p>
     <div class="by">Built by <a href="https://github.com/engineering87" target="_blank" rel="noopener">Francesco Del Re</a> · github.com/engineering87</div>
@@ -289,7 +289,7 @@
   <div class="corner br">
     <div class="stack">
       <div>
-        <div class="cap">next-token distribution · temperature</div>
+        <div class="cap">softmax probabilities · temperature</div>
         <canvas id="odist" class="mini" width="190" height="48" style="width:190px;height:48px"></canvas>
         <div class="topw" id="topw"></div>
       </div>
