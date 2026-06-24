@@ -58,9 +58,12 @@
   .seg button[aria-pressed=true]{color:#05060B;font-weight:600}
   .row2{display:flex;gap:9px;align-items:center;font-size:10.5px;color:var(--dim);letter-spacing:.08em;flex-wrap:wrap;justify-content:center}
   .row2 .sl{display:inline-flex;align-items:center;gap:6px}
-  .row2 button{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--dim);background:rgba(10,12,20,.45);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;backdrop-filter:blur(6px);min-width:28px}
-  .row2 button:hover{color:var(--ink)}
-  .row2 button[aria-pressed=true]{color:var(--ink);border-color:var(--hi)}
+  .grp{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+  .glabel{font-family:var(--mono);font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin-right:3px}
+  .cdiv{width:54%;max-width:420px;height:1px;background:var(--line);opacity:.55;margin:2px 0}
+  .row2 button,.grp button{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--dim);background:rgba(10,12,20,.45);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;backdrop-filter:blur(6px);min-width:28px}
+  .row2 button:hover,.grp button:hover{color:var(--ink)}
+  .row2 button[aria-pressed=true],.grp button[aria-pressed=true]{color:var(--ink);border-color:var(--hi)}
   input[type=range]{accent-color:var(--hi);width:92px;vertical-align:middle}
   .cap{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
   canvas.mini{display:block;border:1px solid var(--line);border-radius:6px;background:rgba(10,12,20,.4)}
@@ -263,15 +266,21 @@
         <span class="sl">density<input type="range" id="dens" min="5" max="100" value="55"></span>
         <span class="sl">temp<input type="range" id="temp" min="10" max="200" value="70"></span>
       </div>
-      <div class="row2">
+      <div class="grp">
+        <span class="glabel">model</span>
         <button id="attn" aria-pressed="true">ATTENTION</button>
         <button id="causal" aria-pressed="true">CAUSAL</button>
         <button id="head">HEAD 1</button>
-        <button id="zout" aria-label="zoom out">−</button><button id="zin" aria-label="zoom in">+</button>
+      </div>
+      <div class="cdiv"></div>
+      <div class="grp">
+        <span class="glabel">view</span>
+        <button id="focus">FOCUS</button><button id="tour-btn">TOUR</button>
         <button id="lbl" aria-pressed="true">LABELS</button>
-        <button id="focus">FOCUS</button><button id="tour-btn">TOUR</button><button id="about">ABOUT</button><button id="help">?</button>
         <button id="glow" aria-pressed="true">GLOW</button>
+        <button id="zout" aria-label="zoom out">−</button><button id="zin" aria-label="zoom in">+</button>
         <button id="pause">PAUSE</button><button id="reset">RESET</button>
+        <button id="about">ABOUT</button><button id="help">?</button>
       </div>
       <div class="hint">drag to orbit · scroll or ± to zoom</div>
     </div>
