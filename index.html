@@ -159,6 +159,8 @@
     .tr{top:112px;padding:8px 12px}
     .r{gap:8px}.r .val{min-width:62px;font-size:12px}.r .lab{font-size:8.5px}
     .seg button{padding:8px 10px;font-size:11.5px}.bl .mini{display:none}
+    .hint{display:none}.bl .cap{display:none}.credit-corner{display:none}
+    .intro{background:rgba(5,6,11,.96)}
   }
   @media (max-width:430px){
     .tl{top:78px}.tr{top:104px}
@@ -775,7 +777,7 @@
       ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=GLOW_ALPHA;
       ctx.drawImage(glowCv,0,0,W,H_); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
     }
-    if(showLabels) drawLabels();
+    if(showLabels && innerWidth>820) drawLabels();   // scene annotations need room; skip on small screens
   }
 
   // ---------- input ----------
